@@ -28,7 +28,7 @@ init(State) ->
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
 do(State) ->
     Relx = rebar_state:get(State, relx, []),
-    RelxAppMap = 
+    _RelxAppMap = 
         lists:foldl(
           fun(Release, Acc) ->
                   add_release(Release, Acc)
@@ -40,7 +40,6 @@ do(State) ->
 -spec format_error(any()) ->  iolist().
 format_error(Reason) ->
     io_lib:format("~p", [Reason]).
-
 
 add_release({release, RelInfo, Apps}, Acc) ->
     add_release({release, RelInfo, Apps, []}, Acc);

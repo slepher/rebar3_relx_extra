@@ -37,17 +37,17 @@
 %%============================================================================
 -spec init(rlx_state:t()) -> {ok, rlx_state:t()}.
 init(State) ->
-    State1 = rlx_state:add_provider(State, providers:create([{name, ?PROVIDER},
-                                                             {module, ?MODULE},
-                                                             {deps, ?DEPS},
-                                                             {hooks, {[], [overlay]}}])),
+    Provider = providers:create([{name, ?PROVIDER},
+                                 {module, ?MODULE},
+                                 {deps, ?DEPS},
+                                 {hooks, {[], [overlay]}}]),
+    State1 = rlx_state:add_provider(State, Provider),
     {ok, State1}.
 
 %% @doc recursively dig down into the library directories specified in the state
 %% looking for OTP Applications
 -spec do(rlx_state:t()) -> {ok, rlx_state:t()} | relx:error().
 do(State) ->
-    io:format("release ext~n"),
     {RelName, RelVsn} = rlx_state:default_configured_release(State),
     Release = rlx_state:get_realized_release(State, RelName, RelVsn),
     OutputDir = rlx_state:output_dir(State),

@@ -1,0 +1,4 @@
+:name "rebar3_relx_extra"
+:node-sname "rebar3_relx_extra_edts"
+:lib-dirs '("_build/default/lib" "_checkouts")
+:app-include-dirs '("include")

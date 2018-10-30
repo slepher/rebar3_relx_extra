@@ -125,7 +125,8 @@ create_release_info(State0, Release0, OutputDir) ->
             NApps = 
                 lists:map(
                   fun({App, AppVsn}) ->
-                             case (App == kernel) or (App == stdlib) of
+                          BootApps = [kernel, stdlib, sasl],
+                             case lists:member(App, BootApps) of
                                  true ->
                                      {App, AppVsn};
                                  false ->

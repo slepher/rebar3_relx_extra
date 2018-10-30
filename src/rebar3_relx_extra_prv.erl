@@ -26,7 +26,8 @@ init(State) ->
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
 do(State) ->
     io:format("hello world~n"),
-    rebar_relx:do(rlx_prv_release, "release", ?PROVIDER, State).
+    {ok, State}.
+    %rebar_relx:do(rlx_prv_release, "release", ?PROVIDER, State).
 
 -spec format_error(any()) ->  iolist().
 format_error(Reason) ->

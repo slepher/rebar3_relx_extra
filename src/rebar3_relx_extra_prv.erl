@@ -2,8 +2,8 @@
 
 -export([init/1, do/1, format_error/1]).
 
--define(PROVIDER, rebar3_relx_extra).
--define(DEPS, [app_discovery]).
+-define(PROVIDER, release).
+-define(DEPS, [compile]).
 
 %% ===================================================================
 %% Public API
@@ -15,7 +15,7 @@ init(State) ->
             {module, ?MODULE},            % The module implementation of the task
             {bare, true},                 % The task can be run by the user, always true
             {deps, ?DEPS},                % The list of dependencies
-            {example, "rebar3 rebar3_relx_extra"}, % How to use the plugin
+            {example, "rebar3 rebar3 relx extra"}, % How to use the plugin
             {opts, []},                   % list of options understood by the plugin
             {short_desc, "A rebar plugin"},
             {desc, "A rebar plugin"}

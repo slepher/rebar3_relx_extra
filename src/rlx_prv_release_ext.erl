@@ -115,8 +115,7 @@ format_error({rewrite_app_file, AppFile, Error}) ->
 
 create_release_info(State0, Release0, OutputDir) ->
     ReleaseDir = rlx_util:release_output_dir(State0, Release0),
-    Name = erlang:atom_to_list(rlx_release:name(Release0)),
-    ReleaseFile = filename:join([ReleaseDir, Name ++ "_load.rel"]),
+    ReleaseFile = filename:join([ReleaseDir, "load.rel"]),
     Release1 = rlx_release:relfile(Release0, ReleaseFile),
     ok = ec_file:mkdir_p(ReleaseDir),
     %State1 = rlx_state:update_realized_release(State0, Release1),
@@ -142,30 +141,20 @@ create_release_info(State0, Release0, OutputDir) ->
                        {variables, make_boot_script_variables(State0)},
                        no_module_tests, silent],
             ok = ec_file:write_term(ReleaseFile, Meta),
-            {ok, Metac} = rlx_release:start_clean_metadata(Release1),
-            ok = ec_file:write_term(filename:join([ReleaseDir, "start_cleanx.rel"]), Metac),
-            rlx_util:make_script(Options,
-                                      fun(CorrectedOptions) ->
-                                              systools:make_script("start_cleanx", CorrectedOptions)
-                                      end),
             case rlx_util:make_script(Options,
                                       fun(CorrectedOptions) ->
-                                              systools:make_script(Name ++ "_load", CorrectedOptions)
+                                              systools:make_script("load", CorrectedOptions)
                                       end) of
 
                 ok ->
-                    ok = ec_file:copy(filename:join([ReleaseDir, Name++"_load.boot"]),
-                                      filename:join([OutputDir, "bin", Name++"_load.boot"])),
-                    ok = ec_file:copy(filename:join([ReleaseDir, Name++"_load.boot"]),
-                                      filename:join([OutputDir, "bin", "boot_load.boot"])),
+                    ok = ec_file:copy(filename:join([ReleaseDir,"load.boot"]),
+                                      filename:join([OutputDir, "bin", "load.boot"])),
                     ok;
                 error ->
                     ?RLX_ERROR({release_script_generation_error, ReleaseFile});
                 {ok, _, []} ->
-                    ok = ec_file:copy(filename:join([ReleaseDir, Name++"_load.boot"]),
-                                      filename:join([OutputDir, "bin", Name++"_load.boot"])),
-                    ok = ec_file:copy(filename:join([ReleaseDir, Name++"_load.boot"]),
-                                      filename:join([OutputDir, "bin", "boot_load.boot"])),
+                    ok = ec_file:copy(filename:join([ReleaseDir, "load.boot"]),
+                                      filename:join([OutputDir, "bin", "load.boot"])),
                     ok;
                 {ok,Module,Warnings} ->
                     ?RLX_ERROR({release_script_generation_warn, Module, Warnings});

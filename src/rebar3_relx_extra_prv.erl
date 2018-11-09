@@ -35,7 +35,20 @@ do(State) ->
           end, maps:new(), Relx),
     NRelx = [{add_providers, [rlx_prv_release_ext]}|Relx],
     NState = rebar_state:set(State, relx, NRelx),
-    rebar_relx:do(rlx_prv_release, "release_ext", ?PROVIDER, NState).
+    Options = rebar_state:command_args(NState),
+    OptionsList = split_options(Options, []),
+    lists:foldl(
+      fun(NOptions, {ok, Val}) ->
+              NNState = rebar_state:command_args(NState, NOptions),
+              case rebar_relx:do(rlx_prv_release, "release_ext", ?PROVIDER, NNState) of
+                  {ok, _} ->
+                      {ok, Val};
+                  {error, Reason} ->
+                      {error, Reason}
+              end;
+         (_, {error, Reason}) ->
+              {error, Reason}
+      end, {ok, NState}, OptionsList).
 
 -spec format_error(any()) ->  iolist().
 format_error(Reason) ->
@@ -64,3 +77,16 @@ rlx_base_release({RelName, RelVersion, {extend, Extend}}) ->
     #rlx_extra_release{name = RelName, version = RelVersion, extend = Extend};
 rlx_base_release({RelName, RelVersion}) ->
     #rlx_extra_release{name = RelName, version = RelVersion}.
+
+split_options(["-n",ReleaseOptions|Rest], Acc) ->
+    Releases = string:split(ReleaseOptions, ",", all),
+    lists:map(
+      fun(Release) ->
+              lists:reverse(Acc) ++ ["-n",Release|Rest]
+      end, Releases);
+split_options([Value|Rest], Acc) ->
+    split_options(Rest, [Value|Acc]);
+split_options([], Acc) ->
+    lists:reverse(Acc).
+
+    

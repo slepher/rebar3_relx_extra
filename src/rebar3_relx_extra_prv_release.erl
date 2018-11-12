@@ -1,4 +1,4 @@
--module(rebar3_relx_extra_prv).
+-module(rebar3_relx_extra_prv_release).
 
 -export([init/1, do/1, format_error/1]).
 

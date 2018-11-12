@@ -38,6 +38,7 @@ init(State) ->
 do(State) ->
     Options = rebar_state:command_args(State),
     OptionsList = split_options(Options, []),
+    io:format("options list is ~p~n", [OptionsList]),
     lists:foldl(
       fun(NOptions, {ok, Val}) ->
               io:format("new options is ~p~n", [NOptions]),
@@ -57,7 +58,7 @@ format_error(Reason) ->
     io_lib:format("~p", [Reason]).
 
 split_options(["-n",ReleaseOptions|Rest], Acc) ->
-    Releases = string:split(ReleaseOptions, ",", all),
+    Releases = string:split(ReleaseOptions, "+", all),
     lists:map(
       fun(Release) ->
               lists:reverse(Acc) ++ ["-n",Release|Rest]

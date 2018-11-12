@@ -37,6 +37,7 @@ do(State) ->
     NState = rebar_state:set(State, relx, NRelx),
     Options = rebar_state:command_args(NState),
     OptionsList = split_options(Options, []),
+    io:format("options list is ~p~n", [OptionsList]),
     lists:foldl(
       fun(NOptions, {ok, Val}) ->
               NNState = rebar_state:command_args(NState, NOptions),
@@ -79,7 +80,7 @@ rlx_base_release({RelName, RelVersion}) ->
     #rlx_extra_release{name = RelName, version = RelVersion}.
 
 split_options(["-n",ReleaseOptions|Rest], Acc) ->
-    Releases = string:split(ReleaseOptions, ",", all),
+    Releases = string:split(ReleaseOptions, "+", all),
     lists:map(
       fun(Release) ->
               lists:reverse(Acc) ++ ["-n",Release|Rest]

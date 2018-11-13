@@ -37,7 +37,6 @@ do(State) ->
     NState = rebar_state:set(State, relx, NRelx),
     Options = rebar_state:command_args(NState),
     OptionsList = split_options(Options, []),
-    io:format("options list is ~p~n", [OptionsList]),
     lists:foldl(
       fun(NOptions, {ok, Val}) ->
               NNState = rebar_state:command_args(NState, NOptions),

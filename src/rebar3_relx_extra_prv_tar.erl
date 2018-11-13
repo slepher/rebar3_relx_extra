@@ -38,10 +38,8 @@ init(State) ->
 do(State) ->
     Options = rebar_state:command_args(State),
     OptionsList = split_options(Options, []),
-    io:format("options list is ~p~n", [OptionsList]),
     lists:foldl(
       fun(NOptions, {ok, Val}) ->
-              io:format("new options is ~p~n", [NOptions]),
               NState = rebar_state:command_args(State, NOptions),
               case rebar_relx:do(rlx_prv_release, "tar", ?PROVIDER, NState) of
                   {ok, _} ->

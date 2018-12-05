@@ -23,7 +23,6 @@
 
 -spec init(rebar_state:t()) -> {ok, rebar_state:t()}.
 init(State) ->
-    io:format("initialize rebar3 relx tar~n"),
     State1 = rebar_state:add_provider(State, providers:create([{name, ?PROVIDER},
                                                                {module, ?MODULE},
                                                                {bare, true},

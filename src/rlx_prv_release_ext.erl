@@ -32,6 +32,7 @@
 
 -define(PROVIDER, release_ext).
 -define(DEPS, [release]).
+-define(HOOKS,  {[], []}).
 %%============================================================================
 %% API
 %%============================================================================
@@ -40,7 +41,7 @@ init(State) ->
     Provider = providers:create([{name, ?PROVIDER},
                                  {module, ?MODULE},
                                  {deps, ?DEPS},
-                                 {hooks, {[], [overlay]}}]),
+                                 {hooks, ?HOOKS}]),
     State1 = rlx_state:add_provider(State, Provider),
     {ok, State1}.
 
@@ -51,119 +52,138 @@ do(State) ->
     {RelName, RelVsn} = rlx_state:default_configured_release(State),
     Release = rlx_state:get_realized_release(State, RelName, RelVsn),
     OutputDir = rlx_state:output_dir(State),
-    create_release_info(State, Release, OutputDir),
-    {ok, State}.
+    case create_rel_files(State, Release, OutputDir) of
+        {ok, _} ->
+            write_bin_files(State, Release, OutputDir),
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 -spec format_error(ErrorDetail::term()) -> iolist().
 format_error({unresolved_release, RelName, RelVsn}) ->
     io_lib:format("The release has not been resolved ~p-~s", [RelName, RelVsn]);
-format_error({ec_file_error, AppDir, TargetDir, E}) ->
-    io_lib:format("Unable to copy OTP App from ~s to ~s due to ~p",
-                  [AppDir, TargetDir, E]);
-format_error({vmargs_does_not_exist, Path}) ->
-    io_lib:format("The vm.args file specified for this release (~s) does not exist!",
-                  [Path]);
-format_error({vmargs_src_does_not_exist, Path}) ->
-    io_lib:format("The vm.args.src file specified for this release (~s) does not exist!",
-                  [Path]);
-format_error({config_does_not_exist, Path}) ->
-    io_lib:format("The sys.config file specified for this release (~s) does not exist!",
-                  [Path]);
-format_error({config_src_does_not_exist, Path}) ->
-    io_lib:format("The sys.config.src file specified for this release (~s) does not exist!",
-                  [Path]);
-format_error({sys_config_parse_error, ConfigPath, Reason}) ->
-    io_lib:format("The config file (~s) specified for this release could not be opened or parsed: ~s",
-                  [ConfigPath, file:format_error(Reason)]);
-format_error({specified_erts_does_not_exist, ErtsVersion}) ->
-    io_lib:format("Specified version of erts (~s) does not exist",
-                  [ErtsVersion]);
-format_error({release_script_generation_error, RelFile}) ->
-    io_lib:format("Unknown internal release error generating the release file to ~s",
-                  [RelFile]);
-format_error({release_script_generation_warning, Module, Warnings}) ->
-    ["Warnings generating release \s",
-     rlx_util:indent(2), Module:format_warning(Warnings)];
-format_error({unable_to_create_output_dir, OutputDir}) ->
-    io_lib:format("Unable to create output directory (possible permissions issue): ~s",
-                  [OutputDir]);
-format_error({release_script_generation_error, Module, Errors}) ->
-    ["Errors generating release \n",
-     rlx_util:indent(2), Module:format_error(Errors)];
-format_error({unable_to_make_symlink, AppDir, TargetDir, Reason}) ->
-    io_lib:format("Unable to symlink directory ~s to ~s because \n~s~s",
-                  [AppDir, TargetDir, rlx_util:indent(2),
-                   file:format_error(Reason)]);
-format_error(boot_script_generation_error) ->
-    "Unknown internal release error generating start_clean.boot";
-format_error({boot_script_generation_warning, Module, Warnings}) ->
-    ["Warnings generating start_clean.boot \s",
-     rlx_util:indent(2), Module:format_warning(Warnings)];
-format_error({boot_script_generation_error, Module, Errors}) ->
-    ["Errors generating start_clean.boot \n",
-     rlx_util:indent(2), Module:format_error(Errors)];
-format_error({strip_release, Reason}) ->
-    io_lib:format("Stripping debug info from release beam files failed becuase ~s",
-                  [beam_lib:format_error(Reason)]);
-format_error({rewrite_app_file, AppFile, Error}) ->
-    io_lib:format("Unable to rewrite .app file ~s due to ~p",
-                  [AppFile, Error]).
+format_error(Reason) ->
+    io_lib:format("~p", [Reason]).
+
 
 %%%===================================================================
 %%% Internal Functions
 %%%===================================================================
 
-create_release_info(State0, Release0, OutputDir) ->
+write_bin_files(State, Release, OutputDir) ->
+    Config = rlx_release:config(Release),
+    case proplists:get_value(ext, Config) of
+        undefined ->
+            {ok, State};
+        SubReleaseNames ->
+            Erts = rlx_release:erts(Release),
+            lists:map(
+              fun({SubReleaseName, SubReleaseVsn}) ->
+                      SubRelease = rlx_state:get_configured_release(State, SubReleaseName, SubReleaseVsn),
+                      rlx_release_bin:write_bin_file(State, SubRelease, Erts, OutputDir)
+                  end, SubReleaseNames)
+    end.
+
+create_rel_files(State0, Release0, OutputDir) ->
     ReleaseDir = rlx_util:release_output_dir(State0, Release0),
     ReleaseFile = filename:join([ReleaseDir, "load.rel"]),
     Release1 = rlx_release:relfile(Release0, ReleaseFile),
     ok = ec_file:mkdir_p(ReleaseDir),
-    %State1 = rlx_state:update_realized_release(State0, Release1),
-    case rlx_release:metadata(Release1) of
-        {ok, {release, ErlInfo, ErtsInfo, Apps}} ->
-            NApps = 
+    Options = [{path, [ReleaseDir | rlx_util:get_code_paths(Release1, OutputDir)]},
+               {outdir, ReleaseDir},
+               {variables, make_boot_script_variables(State0)},
+               no_module_tests, silent],
+    case rel_metas(Release0, State0) of
+        {ok, RelFiles} ->
+            Acc1 = 
                 lists:map(
-                  fun({App, AppVsn}) ->
-                          BootApps = [kernel, stdlib, sasl],
-                             case lists:member(App, BootApps) of
-                                 true ->
-                                     {App, AppVsn};
-                                 false ->
-                                     {App, AppVsn, load}
-                             end;
-                     (AppInfo) ->
-                          AppInfo
-                  end, Apps),
-            Meta = {release, ErlInfo, ErtsInfo, NApps},
-                  
-            Options = [{path, [ReleaseDir | rlx_util:get_code_paths(Release1, OutputDir)]},
-                       {outdir, ReleaseDir},
-                       {variables, make_boot_script_variables(State0)},
-                       no_module_tests, silent],
-            ok = ec_file:write_term(ReleaseFile, Meta),
-            case rlx_util:make_script(Options,
-                                      fun(CorrectedOptions) ->
-                                              systools:make_script("load", CorrectedOptions)
-                                      end) of
-
-                ok ->
-                    ok = ec_file:copy(filename:join([ReleaseDir,"load.boot"]),
-                                      filename:join([OutputDir, "bin", "load.boot"])),
-                    ok;
-                error ->
-                    ?RLX_ERROR({release_script_generation_error, ReleaseFile});
-                {ok, _, []} ->
-                    ok = ec_file:copy(filename:join([ReleaseDir, "load.boot"]),
-                                      filename:join([OutputDir, "bin", "load.boot"])),
-                    ok;
-                {ok,Module,Warnings} ->
-                    ?RLX_ERROR({release_script_generation_warn, Module, Warnings});
-                {error,Module,Error} ->
-                    ?RLX_ERROR({release_script_generation_error, Module, Error})
-            end;
+                  fun({RelFilename, Meta}) ->
+                          rel_files(RelFilename, Meta, Options, ReleaseDir, OutputDir)
+                  end, RelFiles),
+            rebar3_relx_extra_lib:split_fails(fun(ok, ok) -> ok end, ok, Acc1);
         E ->
             E
     end.
+
+rel_files(RelFilename, Meta, Options, ReleaseDir, OutputDir) ->
+    RelFilename1 = atom_to_list(RelFilename),
+    ReleaseFile1 = filename:join([ReleaseDir, RelFilename1 ++ ".rel"]),
+    ok = ec_file:write_term(ReleaseFile1, Meta),
+    Bootfile = RelFilename1 ++ ".boot",
+    ReleaseBootfile = filename:join([ReleaseDir,Bootfile]),
+    BinBootfile = filename:join([OutputDir, "bin", Bootfile]),
+    case rlx_util:make_script(Options,
+                              fun(CorrectedOptions) ->
+                                      systools:make_script(RelFilename1, CorrectedOptions)
+                              end) of
+        
+        ok ->
+            ok = ec_file:copy(ReleaseBootfile, BinBootfile),
+            ok;
+        error ->
+            ?RLX_ERROR({release_script_generation_error, ReleaseFile1});
+        {ok, _, []} ->
+            ok = ec_file:copy(ReleaseBootfile, BinBootfile),
+            ok;
+        {ok,Module,Warnings} ->
+            ?RLX_ERROR({release_script_generation_warn, Module, Warnings});
+        {error,Module,Error} ->
+            ?RLX_ERROR({release_script_generation_error, Module, Error})
+    end.
+
+rel_metas(Release, State) ->
+    ReleaseName = rlx_release:name(Release),
+    Config = rlx_release:config(Release),
+    case proplists:get_value(ext, Config) of
+        undefined ->
+            case rlx_release:metadata(Release) of
+                {ok, {release, ErlInfo, ErtsInfo, Apps}} ->
+                    {ok, [{load, {release, ErlInfo, ErtsInfo, apps_load(Apps)}}]};
+                {error, Reason} ->
+                    {error, {ReleaseName, Reason}}
+            end;
+        SubReleaseNames ->
+            DepGraph = create_dep_graph(State),
+            Acc1 = 
+                lists:map(
+                  fun({SubReleaseName, SubReleaseVsn}) ->
+                          SubRelease = rlx_state:get_configured_release(State, SubReleaseName, SubReleaseVsn),
+                          case realized_release(SubRelease, DepGraph, State) of
+                              {ok, SubRelease1} ->
+                                  case rlx_release:metadata(SubRelease1) of
+                                      {ok, {release, ErlInfo, ErtsInfo, Apps}} ->
+                                          {ok, [{SubReleaseName, {release, ErlInfo, ErtsInfo, Apps}},
+                                                {release_load(SubReleaseName), {release, ErlInfo, ErtsInfo, apps_load(Apps)}}]};
+                                      {error, Reason} ->
+                                          {error, {SubReleaseName, SubReleaseVsn, Reason}}
+                                  end;
+                              {error, Reason} ->
+                                  {error, Reason}
+                          end
+                  end, SubReleaseNames) ,
+            rebar3_relx_extra_lib:split_fails(
+              fun(V, Acc2) ->
+                      V ++ Acc2
+              end, [], Acc1)
+    end.
+
+release_load(SubReleaseName) ->
+    list_to_atom(atom_to_list(SubReleaseName) ++ "." ++ "load").
+
+apps_load(Apps) ->
+    lists:map(
+      fun({App, AppVsn}) ->
+              BootApps = [kernel, stdlib, sasl],
+              case lists:member(App, BootApps) of
+                  true ->
+                      {App, AppVsn};
+                  false ->
+                      {App, AppVsn, load}
+              end;
+         (AppInfo) ->
+              AppInfo
+      end, Apps).
 
 make_boot_script_variables(State) ->
     % A boot variable is needed when {include_erts, false} and the application
@@ -185,4 +205,35 @@ make_boot_script_variables(State) ->
             [];
         _ ->
             [{"ERTS_LIB_DIR", code:lib_dir()}]
+    end.
+
+
+create_dep_graph(State) ->
+    Apps = rlx_state:available_apps(State),
+    Graph0 = rlx_depsolver:new_graph(),
+    lists:foldl(fun(App, Graph1) ->
+                        AppName = rlx_app_info:name(App),
+                        AppVsn = rlx_app_info:vsn(App),
+                        Deps = rlx_app_info:active_deps(App) ++
+                            rlx_app_info:library_deps(App),
+                        rlx_depsolver:add_package_version(Graph1,
+                                                          AppName,
+                                                          AppVsn,
+                                                          Deps)
+                end, Graph0, Apps).
+
+
+realized_release(Release, DepGraph, State) ->
+    ReleaseName = rlx_release:name(Release),
+    Goals = rlx_release:goals(Release),
+    case Goals of
+        [] ->
+            {error, {ReleaseName, no_goals_specified}};
+        _ ->
+            case rlx_depsolver:solve(DepGraph, Goals) of
+                {ok, Pkgs} ->
+                    rlx_release:realize(Release, Pkgs, rlx_state:available_apps(State));
+                {error, Error} ->
+                    {error, {ReleaseName, failed_solve, Error}}
+            end
     end.

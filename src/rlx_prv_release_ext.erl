@@ -52,9 +52,8 @@ do(State) ->
     {RelName, RelVsn} = rlx_state:default_configured_release(State),
     Release = rlx_state:get_realized_release(State, RelName, RelVsn),
     OutputDir = rlx_state:output_dir(State),
-    case create_rel_files(State, Release, OutputDir) of
+    case create_rel_files(State, Release, OutputDir, State) of
         {ok, _} ->
-            write_bin_files(State, Release, OutputDir),
             {ok, State};
         {error, Reason} ->
             {error, Reason}
@@ -70,54 +69,71 @@ format_error(Reason) ->
 %%%===================================================================
 %%% Internal Functions
 %%%===================================================================
-
-write_bin_files(State, Release, OutputDir) ->
-    Config = rlx_release:config(Release),
-    case proplists:get_value(ext, Config) of
-        undefined ->
-            {ok, State};
-        SubReleaseNames ->
-            Erts = rlx_release:erts(Release),
-            lists:map(
-              fun({SubReleaseName, SubReleaseVsn}) ->
-                      SubRelease = rlx_state:get_configured_release(State, SubReleaseName, SubReleaseVsn),
-                      rlx_release_bin:write_bin_file(State, SubRelease, Erts, OutputDir)
-                  end, SubReleaseNames)
-    end.
-
-create_rel_files(State0, Release0, OutputDir) ->
+create_rel_files(State0, Release0, OutputDir, State) ->
     ReleaseDir = rlx_util:release_output_dir(State0, Release0),
-    ReleaseFile = filename:join([ReleaseDir, "load.rel"]),
-    Release1 = rlx_release:relfile(Release0, ReleaseFile),
     ok = ec_file:mkdir_p(ReleaseDir),
-    Options = [{path, [ReleaseDir | rlx_util:get_code_paths(Release1, OutputDir)]},
-               {outdir, ReleaseDir},
-               {variables, make_boot_script_variables(State0)},
-               no_module_tests, silent],
-    case rel_metas(Release0, State0) of
-        {ok, RelFiles} ->
+    Variables = make_boot_script_variables(State),
+    CodePath = rlx_util:get_code_paths(Release0, OutputDir),
+    case sub_release_metas(Release0, State0) of
+        {ok, SubReleaseMetas} ->
             Acc1 = 
                 lists:map(
-                  fun({RelFilename, Meta}) ->
-                          rel_files(RelFilename, Meta, Options, ReleaseDir, OutputDir)
-                  end, RelFiles),
+                  fun({SubRelease, SubReleaseMeta}) ->
+                          write_release_files(SubRelease, SubReleaseMeta, State, Variables, CodePath)
+                  end, SubReleaseMetas),
             rebar3_relx_extra_lib:split_fails(fun(ok, ok) -> ok end, ok, Acc1);
-        E ->
-            E
+        {error, Reason} ->
+            {error, Reason}
     end.
 
-rel_files(RelFilename, Meta, Options, ReleaseDir, OutputDir) ->
-    RelFilename1 = atom_to_list(RelFilename),
-    ReleaseFile1 = filename:join([ReleaseDir, RelFilename1 ++ ".rel"]),
+sub_output_dir(Release, OutputDir) ->
+    ReleaseName = rlx_release:name(Release),
+    filename:join([OutputDir, "sub_releases", ReleaseName]).
+
+sub_release_dir(Release, OutputDir) ->
+    Vsn = rlx_release:vsn(Release),
+    SubOutputDir = sub_output_dir(Release, OutputDir),
+    filename:join([SubOutputDir, "releases", Vsn]).
+
+write_release_files(Release, ReleaseMeta, State, Variables, CodePath) ->
+    OutputDir = rlx_state:output_dir(State),
+    SubOutputDir = sub_output_dir(Release, OutputDir),
+    SubReleaseDir = sub_release_dir(Release, OutputDir),
+    ok = ec_file:mkdir_p(SubOutputDir),
+    ok = ec_file:mkdir_p(SubReleaseDir),
+    ok = ec_file:mkdir_p(filename:join([SubOutputDir, "bin"])),
+    ReleaseName = rlx_release:name(Release),
+    RelFilename = atom_to_list(ReleaseName),
+    RelLoadFileName = RelFilename ++ ".load",
+    {release, ErlInfo, ErtsInfo, Apps} = ReleaseMeta,
+    ReleaseLoadMeta = {release, ErlInfo, ErtsInfo, apps_load(Apps)},
+    Erts = rlx_release:erts(Release),
+    case write_rel_files(RelFilename, ReleaseMeta, SubReleaseDir, SubOutputDir, Variables, CodePath) of
+        ok ->
+            case write_rel_files(RelLoadFileName, ReleaseLoadMeta, SubReleaseDir, SubOutputDir, Variables, CodePath) of
+                ok ->
+                    rlx_release_bin:write_bin_file(State, Release, Erts, SubOutputDir);
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+write_rel_files(RelFilename, Meta, ReleaseDir, OutputDir, Variables, CodePath) ->
+    ReleaseFile1 = filename:join([ReleaseDir, RelFilename ++ ".rel"]),
     ok = ec_file:write_term(ReleaseFile1, Meta),
-    Bootfile = RelFilename1 ++ ".boot",
-    ReleaseBootfile = filename:join([ReleaseDir,Bootfile]),
+    Bootfile = RelFilename ++ ".boot",
+    ReleaseBootfile = filename:join([ReleaseDir, Bootfile]),
     BinBootfile = filename:join([OutputDir, "bin", Bootfile]),
+    Options = [{path, [ReleaseDir | CodePath]},
+               {outdir, ReleaseDir},
+               {variables, Variables},
+               no_module_tests, silent],
     case rlx_util:make_script(Options,
                               fun(CorrectedOptions) ->
-                                      systools:make_script(RelFilename1, CorrectedOptions)
+                                      systools:make_script(RelFilename, CorrectedOptions)
                               end) of
-        
         ok ->
             ok = ec_file:copy(ReleaseBootfile, BinBootfile),
             ok;
@@ -132,44 +148,42 @@ rel_files(RelFilename, Meta, Options, ReleaseDir, OutputDir) ->
             ?RLX_ERROR({release_script_generation_error, Module, Error})
     end.
 
-rel_metas(Release, State) ->
-    ReleaseName = rlx_release:name(Release),
+sub_release_metas(Release, State) ->
     Config = rlx_release:config(Release),
     case proplists:get_value(ext, Config) of
         undefined ->
-            case rlx_release:metadata(Release) of
-                {ok, {release, ErlInfo, ErtsInfo, Apps}} ->
-                    {ok, [{load, {release, ErlInfo, ErtsInfo, apps_load(Apps)}}]};
-                {error, Reason} ->
-                    {error, {ReleaseName, Reason}}
-            end;
+            {ok, []};
         SubReleaseNames ->
             DepGraph = create_dep_graph(State),
             Acc1 = 
                 lists:map(
                   fun({SubReleaseName, SubReleaseVsn}) ->
-                          SubRelease = rlx_state:get_configured_release(State, SubReleaseName, SubReleaseVsn),
-                          case realized_release(SubRelease, DepGraph, State) of
-                              {ok, SubRelease1} ->
-                                  case rlx_release:metadata(SubRelease1) of
-                                      {ok, {release, ErlInfo, ErtsInfo, Apps}} ->
-                                          {ok, [{SubReleaseName, {release, ErlInfo, ErtsInfo, Apps}},
-                                                {release_load(SubReleaseName), {release, ErlInfo, ErtsInfo, apps_load(Apps)}}]};
-                                      {error, Reason} ->
-                                          {error, {SubReleaseName, SubReleaseVsn, Reason}}
-                                  end;
+                          case sub_release_meta(SubReleaseName, SubReleaseVsn, State, DepGraph) of
+                              {ok, SubReleaseMeta} ->
+                                  {ok, SubReleaseMeta};
                               {error, Reason} ->
-                                  {error, Reason}
+                                  {error, {SubReleaseName, Reason}}
                           end
                   end, SubReleaseNames) ,
             rebar3_relx_extra_lib:split_fails(
               fun(V, Acc2) ->
-                      V ++ Acc2
+                      [V|Acc2]
               end, [], Acc1)
     end.
 
-release_load(SubReleaseName) ->
-    list_to_atom(atom_to_list(SubReleaseName) ++ "." ++ "load").
+sub_release_meta(SubReleaseName, SubReleaseVsn, State, DepGraph) ->
+    SubRelease = rlx_state:get_configured_release(State, SubReleaseName, SubReleaseVsn),
+    case realized_release(SubRelease, DepGraph, State) of
+        {ok, SubRelease1} ->
+            case rlx_release:metadata(SubRelease1) of
+                {ok, {release, ErlInfo, ErtsInfo, Apps}} ->
+                    {ok, {SubRelease1, {release, ErlInfo, ErtsInfo, Apps}}};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 apps_load(Apps) ->
     lists:map(

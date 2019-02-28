@@ -65,7 +65,6 @@ format_error({unresolved_release, RelName, RelVsn}) ->
 format_error(Reason) ->
     io_lib:format("~p", [Reason]).
 
-
 %%%===================================================================
 %%% Internal Functions
 %%%===================================================================
@@ -77,6 +76,13 @@ create_rel_files(State0, Release0, OutputDir, State) ->
     case realize_subreleases(Release0, State0) of
         {ok, State1} ->
             case sub_release_metas(Release0, State1) of
+                {ok, []} ->
+                    case write_load_files(Release0, State1, Variables, CodePath) of
+                        ok ->
+                            {ok, State1};
+                        {error, Reason} ->
+                            {error, Reason}
+                    end;
                 {ok, SubReleaseMetas} ->
                     Acc1 = 
                         lists:map(
@@ -90,6 +96,17 @@ create_rel_files(State0, Release0, OutputDir, State) ->
         {error, Reason} ->
             {error, Reason}
     end.
+
+write_load_files(Release, State, Variables, CodePath) ->
+    {ok, ReleaseMeta} = rlx_release:metadata(Release),
+    {_RelName, RelVsn} = rlx_state:default_configured_release(State),
+    OutputDir = rlx_state:output_dir(State),
+    CodePath = rlx_util:get_code_paths(Release, OutputDir),
+    ReleaseDir = filename:join([OutputDir, "releases", RelVsn]),
+    LoadFilename = "load",
+    {release, ErlInfo, ErtsInfo, Apps} = ReleaseMeta,
+    ReleaseLoadMeta = {release, ErlInfo, ErtsInfo, apps_load(Apps)},
+    write_rel_files(LoadFilename, ReleaseLoadMeta, ReleaseDir, OutputDir, Variables, CodePath).
 
 sub_output_dir(Release, OutputDir) ->
     ReleaseName = rlx_release:name(Release),

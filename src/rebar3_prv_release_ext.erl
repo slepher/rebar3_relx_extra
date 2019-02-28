@@ -28,7 +28,7 @@ do(State) ->
     %dbg:tracer(),
     %dbg:tpl(erl_tar, create, cx),
     %dbg:p(all, [c]),
-    case relx_ext_lib:update_rlx(State) of
+    case rlx_ext_lib:update_rlx(State) of
         {ok, State1} ->
             Options = rebar_state:command_args(State1),
             OptionsList = split_options(Options, []),

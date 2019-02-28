@@ -110,7 +110,7 @@ write_load_files(Release, State, Variables, CodePath) ->
 
 sub_output_dir(Release, OutputDir) ->
     ReleaseName = rlx_release:name(Release),
-    filename:join([OutputDir, "sub_releases", ReleaseName]).
+    filename:join([OutputDir, "clients", ReleaseName]).
 
 sub_release_dir(Release, OutputDir) ->
     Vsn = rlx_release:vsn(Release),
@@ -125,6 +125,7 @@ write_release_files(Release, ReleaseMeta, State, Variables, CodePath) ->
     ok = ec_file:mkdir_p(SubReleaseDir),
     ok = ec_file:mkdir_p(filename:join([SubOutputDir, "bin"])),
     ReleaseName = rlx_release:name(Release),
+    ReleaseVsn = rlx_release:vsn(Release),
     RelFilename = atom_to_list(ReleaseName),
     RelLoadFileName = "load",
     {release, ErlInfo, ErtsInfo, Apps} = ReleaseMeta,
@@ -133,15 +134,36 @@ write_release_files(Release, ReleaseMeta, State, Variables, CodePath) ->
     copy_base_file(OutputDir, SubOutputDir),
     case write_rel_files(RelFilename, ReleaseMeta, SubReleaseDir, SubOutputDir, Variables, CodePath) of
         ok ->
-            case write_rel_files(RelLoadFileName, ReleaseLoadMeta, SubReleaseDir, SubOutputDir, Variables, CodePath) of
+            case create_RELEASES(OutputDir, RelFilename, ReleaseVsn) of
                 ok ->
-                    rlx_release_bin:write_bin_file(State, Release, Erts, SubOutputDir);
+                    generate_start_erl_data_file(Release, SubOutputDir),
+                    case write_rel_files(RelLoadFileName, ReleaseLoadMeta, SubReleaseDir, SubOutputDir, Variables, CodePath) of
+                        ok ->
+                            rlx_release_bin:write_bin_file(State, Release, Erts, SubOutputDir);
+                        {error, Reason} ->
+                            {error, Reason}
+                    end;
                 {error, Reason} ->
                     {error, Reason}
             end;
         {error, Reason} ->
             {error, Reason}
     end.
+
+create_RELEASES(OutputDir, RelFilename, ReleaseVsn) ->
+    ReleaseDir =  filename:join([OutputDir, "clients", RelFilename, "releases"]),
+    ReleaseFile = filename:join([ReleaseDir, ReleaseVsn, RelFilename ++ ".rel"]),
+    release_handler:create_RELEASES("../..",
+                                         ReleaseDir,
+                                         ReleaseFile,
+                                         []).
+
+generate_start_erl_data_file(Release, OutputDir) ->
+    ErtsVersion = rlx_release:erts(Release),
+    ReleaseVersion = rlx_release:vsn(Release),
+    Data = ErtsVersion ++ " " ++ ReleaseVersion,
+    StartErl = filename:join([OutputDir, "releases", "start_erl.data"]),
+    ok = file:write_file(StartErl, Data).
 
 copy_file_from(Source, Target, Path) ->
     FromFile = filename:join([Source, Path]),
@@ -156,8 +178,6 @@ copy_base_file(OutputDir, SubOutputDir) ->
         false ->
             ok = file:make_symlink("../../lib", Symlink)
     end,
-    copy_file_from(OutputDir, SubOutputDir, filename:join(["releases", "RELEASES"])),
-    copy_file_from(OutputDir, SubOutputDir, filename:join(["releases", "start_erl.data"])),
     copy_file_from(OutputDir, SubOutputDir, filename:join(["bin", "install_upgrade.escript"])),
     copy_file_from(OutputDir, SubOutputDir, filename:join(["bin", "nodetool"])).
 

@@ -23,7 +23,7 @@ sub_release_state(State, Release, ReleaseName, ReleaseVsn) ->
     SubRelease = rlx_state:get_configured_release(State, ReleaseName, ReleaseVsn),
     SubConfig = rlx_release:config(SubRelease),
     State1 = rlx_state:default_configured_release(State, ReleaseName, ReleaseVsn),
-    State2 = rlx_state:base_output_dir(State1, filename:join([OutputDir, "sub_releases"])),
+    State2 = rlx_state:base_output_dir(State1, filename:join([OutputDir, "clients"])),
     {ok, State3} = lists:foldl(fun rlx_config:load_terms/2, {ok, State2}, InitConfig),
     {ok, State4} = lists:foldl(fun rlx_config:load_terms/2, {ok, State3}, SubConfig),
     State4.

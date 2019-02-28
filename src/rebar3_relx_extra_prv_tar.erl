@@ -14,8 +14,8 @@
          do/1,
          format_error/1]).
 
--define(PROVIDER, tar).
--define(DEPS, [release]).
+-define(PROVIDER, tar_ext).
+-define(DEPS, []).
 
 %% ===================================================================
 %% Public API
@@ -35,20 +35,25 @@ init(State) ->
 
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
 do(State) ->
-    Options = rebar_state:command_args(State),
-    OptionsList = split_options(Options, []),
-    lists:foldl(
-      fun(NOptions, {ok, Val}) ->
-              NState = rebar_state:command_args(State, NOptions),
-              case rebar_relx:do(rlx_prv_release, "tar", ?PROVIDER, NState) of
-                  {ok, _} ->
-                      {ok, Val};
-                  {error, Reason} ->
+    case rlx_ext_lib:update_rlx(State) of
+        {ok, State1} ->
+            Options = rebar_state:command_args(State1),
+            OptionsList = split_options(Options, []),
+            lists:foldl(
+              fun(NOptions, {ok, Val}) ->
+                      State2 = rebar_state:command_args(State1, NOptions),
+                      case rebar_relx:do(rlx_prv_release, "tar_ext", ?PROVIDER, State2) of
+                          {ok, _} ->
+                              {ok, Val};
+                          {error, Reason} ->
+                              {error, Reason}
+                      end;
+                 (_, {error, Reason}) ->
                       {error, Reason}
-              end;
-         (_, {error, Reason}) ->
-              {error, Reason}
-      end, {ok, State}, OptionsList).
+              end, {ok, State}, OptionsList);
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 -spec format_error(any()) -> iolist().
 format_error(Reason) ->

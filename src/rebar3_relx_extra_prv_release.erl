@@ -25,7 +25,10 @@ init(State) ->
 
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
 do(State) ->
-    case update_rlx(State) of
+    %dbg:tracer(),
+    %dbg:tpl(erl_tar, create, cx),
+    %dbg:p(all, [c]),
+    case relx_ext_lib:update_rlx(State) of
         {ok, State1} ->
             Options = rebar_state:command_args(State1),
             OptionsList = split_options(Options, []),
@@ -48,83 +51,6 @@ do(State) ->
 -spec format_error(any()) ->  iolist().
 format_error(Reason) ->
     io_lib:format("~p", [Reason]).
-
-update_rlx(State) ->
-    Relx = rebar_state:get(State, relx, []),
-    RelxExt = rebar_state:get(State, relx_ext, []),
-    case merge_relx_ext(Relx, RelxExt) of
-        {ok, Relx1} ->
-            Relx2 = [{add_providers, [rlx_prv_release_ext]}|Relx1],
-            {ok, rebar_state:set(State, relx, Relx2)};
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
-merge_relx_ext(Relx, RelxExt) ->
-    case rlx_state(Relx) of
-        {ok, RelxState} ->
-            Result = 
-                lists:foldl(
-                  fun({release, {ReleaseName, ReleaseVsn}, SubReleases}, Acc) ->
-                          [release(ReleaseName, ReleaseVsn, SubReleases, [], RelxState)|Acc];
-                     ({release, {ReleaseName, ReleaseVsn}, SubReleases, Config}, Acc) ->
-                          [release(ReleaseName, ReleaseVsn, SubReleases, Config, RelxState)|Acc];
-                     (_Other, Acc) ->
-                          Acc
-                  end, [], RelxExt),
-            case rebar3_relx_extra_lib:split_fails(
-                   fun(Succ, Acc1) ->
-                           [Succ|Acc1]
-                   end, [], Result) of
-                {ok, Releases} ->
-                    {ok, Releases ++ Relx};
-                {error, Reason} ->
-                    {error, Reason}
-            end;
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
-rlx_state(Relx) ->
-    State = rlx_state:new([], [release]),
-    lists:foldl(fun rlx_config:load_terms/2, {ok, State}, Relx).
-        
-release(ReleaseName, ReleaseVsn, SubReleases, Config, RelxState) ->
-    Result = 
-        lists:map(
-          fun(SubReleaseName) when is_atom(SubReleaseName) ->
-                  goals(SubReleaseName, ReleaseVsn, RelxState);
-             ({SubReleaseName, SubReleaseVsn}) when is_atom(SubReleaseName) ->
-                  goals(SubReleaseName, SubReleaseVsn, RelxState);
-             (SubRelease) ->
-                  {error, {invalid_sub_release, SubRelease}}
-          end, SubReleases),
-    case rebar3_relx_extra_lib:split_fails(
-           fun(SubGoals, Acc1) ->
-                   ordsets:union(ordsets:from_list(SubGoals), Acc1)
-           end, ordsets:new(), Result) of
-        {ok, Goals} ->
-            SubReleases1 = 
-                lists:map(
-                  fun(SubReleaseName) when is_atom(SubReleaseName) ->
-                          {SubReleaseName, ReleaseVsn};
-                     ({SubReleaseName, SubReleaseVsn}) when is_atom(SubReleaseName) ->
-                          {SubReleaseName, SubReleaseVsn}
-                  end, SubReleases),
-            {ok, {release, {ReleaseName, ReleaseVsn}, Goals, [{ext, SubReleases1}|Config]}};
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
-goals(ReleaseName, ReleaseVsn, RelxState) ->
-    try rlx_state:get_configured_release(RelxState, ReleaseName, ReleaseVsn) of
-        Release ->
-            {ok, rlx_release:goals(Release)}
-    catch
-        _:not_found ->
-            {error, {ReleaseName, ReleaseVsn, not_found}}
-    end.
-
 
 split_options(["-n",ReleaseOptions|Rest], Acc) ->
     Releases = string:split(ReleaseOptions, "+", all),

@@ -207,11 +207,11 @@ extended_bin_file_contents(OsFamily, RelName, RelVsn, ErtsVsn, ErlOpts, Hooks, E
 render(Template) ->
     render(Template, []).
 
-render(extended_bin, Data) ->
-    TemplateFile = filename:join([code:priv_dir(rebar3_relx_extra), "templates", "extended_bin"]),
-    {ok, Bin} = file:read_file(TemplateFile),
-    {ok, Content} = rlx_util:render(Bin, Data),
-    Content;
+%% render(extended_bin, Data) ->
+%%     TemplateFile = filename:join([code:priv_dir(rebar3_relx_extra), "templates", "extended_bin"]),
+%%     {ok, Bin} = file:read_file(TemplateFile),
+%%     {ok, Content} = rlx_util:render(Bin, Data),
+%%     Content;
 
 render(Template, Data) ->
     Files = rlx_util:template_files(),

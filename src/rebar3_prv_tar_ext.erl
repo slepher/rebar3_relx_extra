@@ -6,7 +6,7 @@
 %%% @end
 %%% Created : 12 Nov 2018 by Chen Slepher <slepheric@gmail.com>
 %%%-------------------------------------------------------------------
--module(rebar3_relx_extra_prv_tar).
+-module(rebar3_prv_tar_ext).
 
 -behaviour(provider).
 

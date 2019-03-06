@@ -14,8 +14,8 @@
          do/1,
          format_error/1]).
 
--define(PROVIDER, tar_ext).
--define(DEPS, []).
+-define(PROVIDER, tar).
+-define(DEPS, [compile]).
 
 %% ===================================================================
 %% Public API

@@ -153,10 +153,7 @@ write_release_files(Release, ReleaseMeta, State, Variables, CodePath) ->
 create_RELEASES(OutputDir, RelFilename, ReleaseVsn) ->
     ReleaseDir =  filename:join([OutputDir, "clients", RelFilename, "releases"]),
     ReleaseFile = filename:join([ReleaseDir, ReleaseVsn, RelFilename ++ ".rel"]),
-    release_handler:create_RELEASES("../..",
-                                         ReleaseDir,
-                                         ReleaseFile,
-                                         []).
+    release_handler:create_RELEASES("../..", ReleaseDir, ReleaseFile, []).
 
 generate_start_erl_data_file(Release, OutputDir) ->
     ErtsVersion = rlx_release:erts(Release),

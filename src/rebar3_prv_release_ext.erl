@@ -2,9 +2,9 @@
 
 -export([init/1, do/1, format_error/1]).
 
--define(PROVIDER, release_ext).
-%-define(DEPS, [compile]).
--define(DEPS, []).
+-define(PROVIDER, release).
+-define(DEPS, [compile]).
+%-define(DEPS, []).
 
 %% ===================================================================
 %% Public API

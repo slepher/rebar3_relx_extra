@@ -33,7 +33,7 @@ update_rlx(State) ->
     RelxExt = rebar_state:get(State, relx_ext, []),
     case merge_relx_ext(Relx, RelxExt) of
         {ok, Relx1} ->
-            Relx2 = [{add_providers, [rlx_prv_release_ext, rlx_prv_archive_ext]}|Relx1],
+            Relx2 = [{add_providers, [rlx_prv_release_ext, rlx_prv_archive_ext, rlx_prv_clusup]}|Relx1],
             {ok, rebar_state:set(State, relx, Relx2)};
         {error, Reason} ->
             {error, Reason}
@@ -42,17 +42,17 @@ update_rlx(State) ->
 rlx_state(Relx) ->
     State = rlx_state:new([], [release]),
     lists:foldl(fun rlx_config:load_terms/2, {ok, State}, Relx).
-        
 
 merge_relx_ext(Relx, RelxExt) ->
     case rlx_state(Relx) of
         {ok, RelxState} ->
+            RlxReleaseMap = rlx_releases(RelxState),
             Result = 
                 lists:foldl(
                   fun({release, {ReleaseName, ReleaseVsn}, SubReleases}, Acc) ->
-                          [release(ReleaseName, ReleaseVsn, SubReleases, [], Relx, RelxState)|Acc];
+                          [release(ReleaseName, ReleaseVsn, SubReleases, [], RlxReleaseMap, Relx, RelxState)|Acc];
                      ({release, {ReleaseName, ReleaseVsn}, SubReleases, Config}, Acc) ->
-                          [release(ReleaseName, ReleaseVsn, SubReleases, Config, Relx, RelxState)|Acc];
+                          [release(ReleaseName, ReleaseVsn, SubReleases, Config, RlxReleaseMap, Relx, RelxState)|Acc];
                      (_Other, Acc) ->
                           Acc
                   end, [], RelxExt),
@@ -69,42 +69,69 @@ merge_relx_ext(Relx, RelxExt) ->
             {error, Reason}
     end.
 
-release(ReleaseName, ReleaseVsn, SubReleases, Config, Relx, RelxState) ->
+rlx_releases(State) ->
+    Releases = rlx_state:configured_releases(State),
+    RelVsns = ec_dictionary:keys(Releases),
+    RlxReleaseMap = 
+    lists:foldl(
+      fun({ReleaseName, ReleaseVsn}, Acc) ->
+              ReleaseVsns = maps:get(ReleaseName, Acc, []),
+              ReleaseVsns1 = [ReleaseVsn|ReleaseVsns],
+              maps:put(ReleaseName, ReleaseVsns1, Acc)
+      end, maps:new(), RelVsns),
+    maps:map(
+      fun(_ReleaseName, ReleaseVsns) ->
+              lists:sort(
+                fun(R1, R2) ->
+                        ec_semver:gte(R1, R2)
+                end, ReleaseVsns)
+      end, RlxReleaseMap).
+
+release(ReleaseName, ReleaseVsn, SubReleases, Config, RlxReleaseMap, Relx, RelxState) ->
     Result = 
         lists:map(
           fun(SubReleaseName) when is_atom(SubReleaseName) ->
-                  goals(SubReleaseName, ReleaseVsn, RelxState);
+                  case get_last_release(SubReleaseName, RlxReleaseMap) of
+                      {ok, SubReleaseVsn} ->
+                          goals(SubReleaseName, SubReleaseVsn, RelxState);
+                      {error, Reason} ->
+                          {error, Reason}
+                  end;
              ({SubReleaseName, SubReleaseVsn}) when is_atom(SubReleaseName) ->
                   goals(SubReleaseName, SubReleaseVsn, RelxState);
              (SubRelease) ->
                   {error, {invalid_sub_release, SubRelease}}
           end, SubReleases),
     case rebar3_relx_extra_lib:split_fails(
-           fun(SubGoals, Acc1) ->
-                   ordsets:union(ordsets:from_list(SubGoals), Acc1)
-           end, ordsets:new(), Result) of
-        {ok, Goals} ->
+           fun({SubReleaseName, SubRelaseVsn, SubGoals}, {SubReleasesAcc, GoalsAcc}) ->
+                   GoalsAcc1 = ordsets:union(ordsets:from_list(SubGoals), GoalsAcc),
+                   SubReleasesAcc1 = [{SubReleaseName, SubRelaseVsn}|SubReleasesAcc],
+                   {SubReleasesAcc1, GoalsAcc1}
+           end, {[], ordsets:new()}, Result) of
+        {ok, {SubReleases1, Goals}} ->
             InitConfig = 
                 lists:map(
                   fun({Key, _}) ->
                           {Key, proplists:get_value(Key, Relx)}
                   end, Config),
-            SubReleases1 = 
-                lists:map(
-                  fun(SubReleaseName) when is_atom(SubReleaseName) ->
-                          {SubReleaseName, ReleaseVsn};
-                     ({SubReleaseName, SubReleaseVsn}) when is_atom(SubReleaseName) ->
-                          {SubReleaseName, SubReleaseVsn}
-                  end, SubReleases),
             {ok, {release, {ReleaseName, ReleaseVsn}, Goals, [{ext, SubReleases1}, {init_config, InitConfig}|Config]}};
         {error, Reason} ->
             {error, Reason}
     end.
 
+get_last_release(SubReleaseName, RlxReleaseMap) ->
+   case maps:find(SubReleaseName, RlxReleaseMap) of
+       {ok, [ReleaseVsn|_T]} ->
+           {ok, ReleaseVsn};
+       error ->
+           {error, {no_subrelease, SubReleaseName}}
+   end.
+
+
 goals(ReleaseName, ReleaseVsn, RelxState) ->
     try rlx_state:get_configured_release(RelxState, ReleaseName, ReleaseVsn) of
         Release ->
-            {ok, rlx_release:goals(Release)}
+            {ok, {ReleaseName, ReleaseVsn, rlx_release:goals(Release)}}
     catch
         _:not_found ->
             {error, {ReleaseName, ReleaseVsn, not_found}}

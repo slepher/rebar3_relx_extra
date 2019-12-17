@@ -4,7 +4,7 @@
 
 -define(PROVIDER, release).
 -define(DEPS, [compile]).
-%-define(DEPS, []).
+%% -define(DEPS, []).
 
 %% ===================================================================
 %% Public API
@@ -25,25 +25,14 @@ init(State) ->
 
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
 do(State) ->
-    %dbg:tracer(),
-    %dbg:tpl(erl_tar, create, cx),
-    %dbg:p(all, [c]),
     case rlx_ext_lib:update_rlx(State) of
         {ok, State1} ->
-            Options = rebar_state:command_args(State1),
-            OptionsList = split_options(Options, []),
-            lists:foldl(
-              fun(NOptions, {ok, Val}) ->
-                      State2 = rebar_state:command_args(State1, NOptions),
-                      case rebar_relx:do(rlx_prv_release_ext, "release_ext", ?PROVIDER, State2) of
-                          {ok, _} ->
-                              {ok, Val};
-                          {error, Reason} ->
-                              {error, Reason}
-                      end;
-                 (_, {error, Reason}) ->
-                      {error, Reason}
-              end, {ok, State1}, OptionsList);
+            case rebar_relx:do(rlx_prv_release_ext, "release_ext", ?PROVIDER, State1) of
+                {ok, _} ->
+                    {ok, State1};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
         {error, Reason} ->
             {error, Reason}
     end.
@@ -51,16 +40,3 @@ do(State) ->
 -spec format_error(any()) ->  iolist().
 format_error(Reason) ->
     io_lib:format("~p", [Reason]).
-
-split_options(["-n",ReleaseOptions|Rest], Acc) ->
-    Releases = string:split(ReleaseOptions, "+", all),
-    lists:map(
-      fun(Release) ->
-              lists:reverse(Acc) ++ ["-n",Release|Rest]
-      end, Releases);
-split_options([Value|Rest], Acc) ->
-    split_options(Rest, [Value|Acc]);
-split_options([], Acc) ->
-    lists:reverse(Acc).
-
-    

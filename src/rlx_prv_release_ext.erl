@@ -84,6 +84,7 @@ create_rel_files(State0, Release0, OutputDir, State) ->
                             {error, Reason}
                     end;
                 {ok, SubReleaseMetas} ->
+                    write_cluster_files(ReleaseDir, Release0),
                     Acc1 = 
                         lists:map(
                           fun({SubRelease, SubReleaseMeta}) ->
@@ -96,6 +97,15 @@ create_rel_files(State0, Release0, OutputDir, State) ->
         {error, Reason} ->
             {error, Reason}
     end.
+
+write_cluster_files(ReleaseDir, Release) ->
+    Config = rlx_release:config(Release),
+    SubReleases = proplists:get_value(ext, Config, []),
+    ReleaseName = rlx_release:name(Release),
+    ReleaseVsn = rlx_release:vsn(Release),
+    Meta = {cluster, ReleaseName, ReleaseVsn, SubReleases},
+    ReleaseFile1 = filename:join([ReleaseDir, atom_to_list(ReleaseName) ++ ".clus"]),
+    ok = ec_file:write_term(ReleaseFile1, Meta).
 
 write_load_files(Release, State, Variables, CodePath) ->
     {ok, ReleaseMeta} = rlx_release:metadata(Release),

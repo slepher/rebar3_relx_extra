@@ -1,3 +1,4 @@
+
 %%%-------------------------------------------------------------------
 %%% @author Chen Slepher <slepheric@gmail.com>
 %%% @copyright (C) 2019, Chen Slepher
@@ -15,7 +16,6 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
-
 sub_release_state(State, Release, ReleaseName, ReleaseVsn) ->
     Config = rlx_release:config(Release),
     InitConfig = proplists:get_value(init_config, Config),

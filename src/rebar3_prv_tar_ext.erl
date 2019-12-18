@@ -35,37 +35,8 @@ init(State) ->
 
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
 do(State) ->
-    case rlx_ext_lib:update_rlx(State) of
-        {ok, State1} ->
-            Options = rebar_state:command_args(State1),
-            OptionsList = split_options(Options, []),
-            lists:foldl(
-              fun(NOptions, {ok, Val}) ->
-                      State2 = rebar_state:command_args(State1, NOptions),
-                      case rebar_relx:do(rlx_prv_release, "tar_ext", ?PROVIDER, State2) of
-                          {ok, _} ->
-                              {ok, Val};
-                          {error, Reason} ->
-                              {error, Reason}
-                      end;
-                 (_, {error, Reason}) ->
-                      {error, Reason}
-              end, {ok, State}, OptionsList);
-        {error, Reason} ->
-            {error, Reason}
-    end.
+    rebar3_relx_extra_lib:do(rlx_prv_release, "tar_ext", ?PROVIDER, State).
 
 -spec format_error(any()) -> iolist().
 format_error(Reason) ->
     io_lib:format("~p", [Reason]).
-
-split_options(["-n",ReleaseOptions|Rest], Acc) ->
-    Releases = string:split(ReleaseOptions, "+", all),
-    lists:map(
-      fun(Release) ->
-              lists:reverse(Acc) ++ ["-n",Release|Rest]
-      end, Releases);
-split_options([Value|Rest], Acc) ->
-    split_options(Rest, [Value|Acc]);
-split_options([], Acc) ->
-    lists:reverse(Acc).

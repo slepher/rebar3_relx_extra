@@ -25,17 +25,7 @@ init(State) ->
 
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
 do(State) ->
-    case rlx_ext_lib:update_rlx(State) of
-        {ok, State1} ->
-            case rebar_relx:do(rlx_prv_release_ext, "release_ext", ?PROVIDER, State1) of
-                {ok, _} ->
-                    {ok, State1};
-                {error, Reason} ->
-                    {error, Reason}
-            end;
-        {error, Reason} ->
-            {error, Reason}
-    end.
+    rebar3_relx_extra_lib:do(rlx_prv_release_ext, "release_ext", ?PROVIDER, State).
 
 -spec format_error(any()) ->  iolist().
 format_error(Reason) ->

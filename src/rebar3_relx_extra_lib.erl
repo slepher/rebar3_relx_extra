@@ -9,11 +9,24 @@
 -module(rebar3_relx_extra_lib).
 
 %% API
+-export([do/4]).
 -export([split_fails/3]).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
+do(RlxModule, RlxAction, RlxProvider, State) ->
+    case rlx_ext_lib:update_rlx(State) of
+        {ok, State1} ->
+            case rebar_relx:do(RlxModule, RlxAction, RlxProvider, State1) of
+                {ok, _} ->
+                    {ok, State1};
+                {error, Reason} ->
+                    {error, Reason}
+              end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 %%--------------------------------------------------------------------
 %% @doc

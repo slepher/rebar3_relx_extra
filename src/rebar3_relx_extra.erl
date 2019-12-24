@@ -8,7 +8,6 @@
 %%%-------------------------------------------------------------------
 -module(rebar3_relx_extra).
 
-
 %% API
 -export([init/1]).
 
@@ -20,9 +19,10 @@
 -spec init(rebar_state:t()) -> {ok, rebar_state:t()}.
 init(State) ->
     {ok, State1} = rebar3_prv_release_ext:init(State),
-    {ok, State2} = rebar3_prv_tar_ext:init(State1),
+    {ok, State2} = rebar3_prv_clusrel:init(State1),
     {ok, State3} = rebar3_prv_clusup:init(State2),
-    {ok, State3}.
+    {ok, State4} = rebar3_prv_tar_ext:init(State3),
+    {ok, State4}.
 
 %%--------------------------------------------------------------------
 %% @doc

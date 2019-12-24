@@ -20,7 +20,7 @@
 %%%
 %%% @doc Given a complete built release this provider assembles that release
 %%% into a release directory.
--module(rlx_prv_release_ext).
+-module(rlx_prv_clusrel).
 
 -behaviour(provider).
 
@@ -30,8 +30,8 @@
 
 -include_lib("relx/include/relx.hrl").
 
--define(PROVIDER, release_ext).
--define(DEPS, [release]).
+-define(PROVIDER, clusrel).
+-define(DEPS, [resolve_release]).
 -define(HOOKS,  {[], []}).
 %%============================================================================
 %% API
@@ -69,22 +69,15 @@ format_error(Reason) ->
 %%% Internal Functions
 %%%===================================================================
 create_rel_files(State0, Release0, OutputDir, State) ->
-    ReleaseDir = rlx_util:release_output_dir(State0, Release0),
-    ok = ec_file:mkdir_p(ReleaseDir),
     Variables = make_boot_script_variables(State),
     CodePath = rlx_util:get_code_paths(Release0, OutputDir),
     case realize_subreleases(Release0, State0) of
         {ok, State1} ->
             case sub_release_metas(Release0, State1) of
                 {ok, []} ->
-                    case write_load_files(Release0, State1, Variables, CodePath) of
-                        ok ->
-                            {ok, State1};
-                        {error, Reason} ->
-                            {error, Reason}
-                    end;
+                    {error, no_releases};
                 {ok, SubReleaseMetas} ->
-                    write_cluster_files(ReleaseDir, Release0, SubReleaseMetas),
+                    write_cluster_files(State0, Release0),
                     Acc1 = 
                         lists:map(
                           fun({SubRelease, SubReleaseMeta}) ->
@@ -98,35 +91,24 @@ create_rel_files(State0, Release0, OutputDir, State) ->
             {error, Reason}
     end.
 
-write_cluster_files(ReleaseDir, Release, SubReleaseMetas) ->
-    ClusterApps = 
-        lists:foldl(
-          fun({_SubRelease, {release, _ErlInfo, _ErtsInfo, Apps}}, Acc) ->
-                     lists:foldl(
-                       fun({AppName, AppVsn}, Acc1) ->
-                               ordsets:add_element({AppName, AppVsn}, Acc1);
-                          ({AppName, AppVsn, _Load}, Acc1) ->
-                               ordsets:add_element({AppName, AppVsn}, Acc1)
-                       end, Acc, Apps)
-             end, ordsets:new(), SubReleaseMetas),
-    Config = rlx_release:config(Release),
-    SubReleases = proplists:get_value(ext, Config, []),
-    ReleaseName = rlx_release:name(Release),
-    ReleaseVsn = rlx_release:vsn(Release),
-    Meta = {cluster, ReleaseName, ReleaseVsn, SubReleases, ClusterApps},
-    ReleaseFile1 = filename:join([ReleaseDir, atom_to_list(ReleaseName) ++ ".clus"]),
-    ok = ec_file:write_term(ReleaseFile1, Meta).
-
-write_load_files(Release, State, Variables, CodePath) ->
-    {ok, ReleaseMeta} = rlx_release:metadata(Release),
-    {_RelName, RelVsn} = rlx_state:default_configured_release(State),
-    OutputDir = rlx_state:output_dir(State),
-    CodePath = rlx_util:get_code_paths(Release, OutputDir),
-    ReleaseDir = filename:join([OutputDir, "releases", RelVsn]),
-    LoadFilename = "load",
-    {release, ErlInfo, ErtsInfo, Apps} = ReleaseMeta,
-    ReleaseLoadMeta = {release, ErlInfo, ErtsInfo, apps_load(Apps)},
-    write_rel_files(LoadFilename, ReleaseLoadMeta, ReleaseDir, OutputDir, Variables, CodePath).
+write_cluster_files(State, Release) ->
+    case rlx_release:metadata(Release) of
+        {ok, {release, _ErlInfo, _ErtsInfo, Apps}} ->
+            ReleaseName = rlx_release:name(Release),
+            OutputDir = rlx_state:output_dir(State),
+            ReleaseDir = rlx_util:release_output_dir(State, Release),
+            Config = rlx_release:config(Release),
+            SubReleases = proplists:get_value(ext, Config, []),
+            ReleaseName = rlx_release:name(Release),
+            ReleaseVsn = rlx_release:vsn(Release),
+            Meta = {cluster, ReleaseName, ReleaseVsn, SubReleases, Apps},
+            ReleaseFile = filename:join([OutputDir, "clus"]),
+            ReleaseFile1 = filename:join([ReleaseDir, "clus"]),
+            ok = ec_file:write_term(ReleaseFile, Meta),
+            ok = ec_file:write_term(ReleaseFile1, Meta);
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 sub_output_dir(Release, OutputDir) ->
     ReleaseName = rlx_release:name(Release),

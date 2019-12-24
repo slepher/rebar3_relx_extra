@@ -52,8 +52,9 @@ do(State) ->
     {RelName, RelVsn} = rlx_state:default_configured_release(State),
     Release = rlx_state:get_realized_release(State, RelName, RelVsn),
     OutputDir = rlx_state:output_dir(State),
-    case create_rel_files(State, Release, OutputDir, State) of
+    case create_rel_files(State, Release, OutputDir) of
         {ok, State1} ->
+            io:format("ok~n"),
             sub_releases_overlay(Release, State1);
         {error, Reason} ->
             {error, Reason}
@@ -68,40 +69,61 @@ format_error(Reason) ->
 %%%===================================================================
 %%% Internal Functions
 %%%===================================================================
-create_rel_files(State0, Release0, OutputDir, State) ->
+create_rel_files(State, Release0, OutputDir) ->
+    Config = rlx_release:config(Release0),
     Variables = make_boot_script_variables(State),
     CodePath = rlx_util:get_code_paths(Release0, OutputDir),
-    case realize_subreleases(Release0, State0) of
-        {ok, State1} ->
-            case sub_release_metas(Release0, State1) of
-                {ok, []} ->
-                    {error, no_releases};
-                {ok, SubReleaseMetas} ->
-                    write_cluster_files(State0, Release0),
+    case proplists:get_value(ext, Config) of
+        undefined ->
+            {error, no_releases};
+        SubReleases ->
+            write_cluster_files(State, SubReleases, Release0),
+            InclApps = incl_apps(Config),
+            DepGraph = create_dep_graph(State),
+            case realize_sub_releases(SubReleases, DepGraph, InclApps, State) of
+                {ok, State1} ->
                     Acc1 = 
                         lists:map(
-                          fun({SubRelease, SubReleaseMeta}) ->
-                                  write_release_files(SubRelease, SubReleaseMeta, State, Variables, CodePath)
-                          end, SubReleaseMetas),
+                          fun({SubReleaseName, SubReleaseVsn}) ->
+                                  RealizedSubRelease = rlx_state:get_realized_release(State1, SubReleaseName, SubReleaseVsn),
+                                  case rlx_release:metadata(RealizedSubRelease) of
+                                      {ok, {release, _ErlInfo, _ErtsInfo, _Apps} = SubReleaseMeta} ->
+                                          write_release_files(RealizedSubRelease, SubReleaseMeta, State1, Variables, CodePath);
+                                      {error, Reason} ->
+                                          {error, Reason}
+                          end
+                          end, SubReleases),
                     rebar3_relx_extra_lib:split_fails(fun(ok, Acc) -> Acc end, State1, Acc1);
                 {error, Reason} ->
                     {error, Reason}
-            end;
-        {error, Reason} ->
-            {error, Reason}
+            end
     end.
 
-write_cluster_files(State, Release) ->
+realize_sub_releases([{SubReleaseName, SubReleaseVsn}|T], DepGraph, InclApps, State) ->
+    case realized_release(State, DepGraph, InclApps, SubReleaseName, SubReleaseVsn) of
+        {ok, RealizedSubRelease} ->
+            State1 = rlx_state:add_realized_release(State, RealizedSubRelease),
+            realize_sub_releases(T, DepGraph, InclApps, State1);
+        {error, Reason} ->
+            {error, Reason}
+    end;
+realize_sub_releases([], _DepGraph, _InclApps, State) ->
+    {ok, State}.
+
+write_cluster_files(State, SubReleases, Release) ->
+    SubReleaseDatas = 
+        lists:map(
+          fun({SubReleaseName, SubReleaseVsn}) ->
+                  sub_release_data(State, SubReleaseName, SubReleaseVsn)
+          end, SubReleases),
     case rlx_release:metadata(Release) of
         {ok, {release, _ErlInfo, _ErtsInfo, Apps}} ->
             ReleaseName = rlx_release:name(Release),
             OutputDir = rlx_state:output_dir(State),
             ReleaseDir = rlx_util:release_output_dir(State, Release),
-            Config = rlx_release:config(Release),
-            SubReleases = proplists:get_value(ext, Config, []),
             ReleaseName = rlx_release:name(Release),
             ReleaseVsn = rlx_release:vsn(Release),
-            Meta = {cluster, ReleaseName, ReleaseVsn, SubReleases, Apps},
+            Meta = {cluster, ReleaseName, ReleaseVsn, SubReleaseDatas, Apps},
             ReleaseFile = filename:join([OutputDir, "clus"]),
             ReleaseFile1 = filename:join([ReleaseDir, "clus"]),
             ok = ec_file:write_term(ReleaseFile, Meta),
@@ -109,6 +131,11 @@ write_cluster_files(State, Release) ->
         {error, Reason} ->
             {error, Reason}
     end.
+
+sub_release_data(State, Name, Vsn) ->
+    SubRelease = rlx_state:get_configured_release(State, Name, Vsn),
+    Goals = rlx_release:goals(SubRelease),
+    {Name, Vsn, Goals}.
 
 sub_output_dir(Release, OutputDir) ->
     ReleaseName = rlx_release:name(Release),
@@ -208,54 +235,29 @@ write_rel_files(RelFilename, Meta, ReleaseDir, OutputDir, Variables, CodePath) -
             ?RLX_ERROR({release_script_generation_error, Module, Error})
     end.
 
-sub_release_metas(Release, State) ->
-    Config = rlx_release:config(Release),
-    case proplists:get_value(ext, Config) of
-        undefined ->
-            {ok, []};
-        SubReleaseNames ->
-            Acc1 = 
-                lists:map(
-                  fun({SubReleaseName, SubReleaseVsn}) ->
-                          case sub_release_meta(SubReleaseName, SubReleaseVsn, State) of
-                              {ok, SubReleaseMeta} ->
-                                  {ok, SubReleaseMeta};
-                              {error, Reason} ->
-                                  {error, {SubReleaseName, Reason}}
-                          end
-                  end, SubReleaseNames) ,
-            rebar3_relx_extra_lib:split_fails(
-              fun(V, Acc2) ->
-                      [V|Acc2]
-              end, [], Acc1)
+
+realized_release(State, DepGraph, InclApps, Name, Vsn) ->
+    Release = rlx_state:get_configured_release(State, Name, Vsn),
+    {ok, Release1} = rlx_release:goals(Release, InclApps),
+    Goals = rlx_release:goals(Release1),
+    case Goals of
+        [] ->
+            {error, {Name, no_goals_specified}};
+        _ ->
+            case rlx_depsolver:solve(DepGraph, Goals) of
+                {ok, Pkgs} ->
+                    rlx_release:realize(Release, Pkgs, rlx_state:available_apps(State));
+                {error, Error} ->
+                    {error, {Name, failed_solve, Error}}
+            end
     end.
 
-realize_subreleases(Release, State) ->
-    Config = rlx_release:config(Release),
-    case proplists:get_value(ext, Config) of
+incl_apps(Config) ->
+    case proplists:get_value(incl_apps, Config) of
         undefined ->
-            {ok, State};
-        SubReleaseNames ->
-            DepGraph = create_dep_graph(State),
-            Acc1 = 
-                lists:map(
-                  fun({SubReleaseName, SubReleaseVsn}) ->
-                          SubRelease = rlx_state:get_configured_release(State, SubReleaseName, SubReleaseVsn),
-                          realized_release(SubRelease, DepGraph, State)
-                  end, SubReleaseNames) ,
-            rebar3_relx_extra_lib:split_fails(
-              fun(SubRelease, StateAcc) ->
-                      rlx_state:add_realized_release(StateAcc, SubRelease)
-              end, State, Acc1)
-    end.
-
-sub_release_meta(SubReleaseName, SubReleaseVsn, State) ->
-    SubRelease = rlx_state:get_realized_release(State, SubReleaseName, SubReleaseVsn),
-    case rlx_release:metadata(SubRelease) of
-        {ok, {release, ErlInfo, ErtsInfo, Apps}} ->
-            {ok, {SubRelease, {release, ErlInfo, ErtsInfo, Apps}}};
-        {error, Reason} ->
-            {error, Reason}
+            [];
+        Apps ->
+            Apps
     end.
 
 sub_releases_overlay(Release, State) ->
@@ -326,19 +328,3 @@ create_dep_graph(State) ->
                                                           AppVsn,
                                                           Deps)
                 end, Graph0, Apps).
-
-
-realized_release(Release, DepGraph, State) ->
-    ReleaseName = rlx_release:name(Release),
-    Goals = rlx_release:goals(Release),
-    case Goals of
-        [] ->
-            {error, {ReleaseName, no_goals_specified}};
-        _ ->
-            case rlx_depsolver:solve(DepGraph, Goals) of
-                {ok, Pkgs} ->
-                    rlx_release:realize(Release, Pkgs, rlx_state:available_apps(State));
-                {error, Error} ->
-                    {error, {ReleaseName, failed_solve, Error}}
-            end
-    end.

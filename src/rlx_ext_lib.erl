@@ -11,6 +11,7 @@
 
 %% API
 -export([sub_release_state/4]).
+-export([rlx_releases/1]).
 -export([update_rlx/1]).
 
 %%%===================================================================
@@ -73,12 +74,12 @@ rlx_releases(State) ->
     Releases = rlx_state:configured_releases(State),
     RelVsns = ec_dictionary:keys(Releases),
     RlxReleaseMap = 
-    lists:foldl(
-      fun({ReleaseName, ReleaseVsn}, Acc) ->
-              ReleaseVsns = maps:get(ReleaseName, Acc, []),
-              ReleaseVsns1 = [ReleaseVsn|ReleaseVsns],
-              maps:put(ReleaseName, ReleaseVsns1, Acc)
-      end, maps:new(), RelVsns),
+        lists:foldl(
+          fun({ReleaseName, ReleaseVsn}, Acc) ->
+                  ReleaseVsns = maps:get(ReleaseName, Acc, []),
+                  ReleaseVsns1 = [ReleaseVsn|ReleaseVsns],
+                  maps:put(ReleaseName, ReleaseVsns1, Acc)
+          end, maps:new(), RelVsns),
     maps:map(
       fun(_ReleaseName, ReleaseVsns) ->
               lists:sort(

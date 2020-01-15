@@ -1,0 +1,113 @@
+#!/bin/sh
+
+set -e
+
+# OSX does not support readlink '-f' flag, work
+# around that
+case $OSTYPE in 
+    darwin*)
+        SCRIPT=$(readlink $0 || true)
+    ;;
+    *)
+        SCRIPT=$(readlink -f $0 || true)
+    ;;
+esac
+
+while getopts :n:r:e:c: opts; do
+    case $opts in
+        c) CONSOLE=$OPTARG ;;
+        e) ERTS_VSN=$OPTARG ;;
+        r) REL_VSN=$OPTARG ;;
+        n) REL_NAME=$OPTARG ;;
+        ?) ;;
+    esac
+done
+
+find_erts_dir() {
+    __erts_dir="$RELEASE_ROOT_DIR/erts-$ERTS_VSN"
+    if [ -d "$__erts_dir" ]; then
+        ERTS_DIR="$__erts_dir";
+        ROOTDIR="$RELEASE_ROOT_DIR"
+    else
+        __erl="$(which erl)"
+        code="io:format(\"~s\", [code:root_dir()]), halt()."
+        __erl_root="$("$__erl" -boot no_dot_erlang -sasl errlog_type error -noshell -eval "$code")"
+        ERTS_DIR="$__erl_root/erts-$ERTS_VSN"
+        ROOTDIR="$__erl_root"
+    fi
+}
+
+add_path() {
+    # Use $CWD/$1 if exists, otherwise releases/VSN/$1
+    IN_FILE_PATH=$2
+    if [ -z "$IN_FILE_PATH" ]; then
+        if [ -f "$RELEASE_ROOT_DIR/$1" ]; then
+            IN_FILE_PATH="$RELEASE_ROOT_DIR/$1"
+        else
+            IN_FILE_PATH="$REL_DIR/$1"
+        fi
+    fi
+    echo $IN_FILE_PATH
+}
+
+[ -z $SCRIPT ] && SCRIPT=$0
+SCRIPT_DIR="$(cd `dirname "$SCRIPT"` && pwd -P)"
+RELEASE_ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+
+VSN_FILE=$RELEASE_ROOT_DIR/clients/$REL_NAME/releases/start_erl.data
+
+[ -z $ERTS_VSN ] && ERTS_VSN=$(cut -f 1 -d" " $VSN_FILE)
+[ -z $REL_VSN ] && REL_VSN=$(cut -f 2 -d" " $VSN_FILE)
+
+echo $ERTS_VSN
+echo $REL_VSN
+
+ERL_OPTS=""
+
+find_erts_dir
+
+export BINDIR="$ERTS_DIR/bin"
+export LD_LIBRARY_PATH="$ERTS_DIR/lib:$LD_LIBRARY_PATH"
+
+
+if [ -z $CONSOLE ]   
+then
+  PIPE_DIR=$RELEASE_ROOT_DIR/epipe/$REL_NAME/
+  RUNNER_LOG_DIR=$RELEASE_ROOT_DIR/runner_log/$REL_NAME/
+  [ ! -d $PIPE_DIR ] && mkdir -p $PIPE_DIR
+  [ ! -d $RUNNER_LOG_DIR ] && mkdir -p $RUNNER_LOG_DIR
+
+  HEART_COMMAND="$SCRIPT_DIR/booter -n $REL_NAME"
+  echo $HEART_COMMAND
+  export HEART_COMMAND
+  echo "$BINDIR/run_erl" -daemon "$PIPE_DIR" "$RUNNER_LOG_DIR" \
+      "exec $SCRIPT -n $REL_NAME -e $ERTS_VSN -r $REL_VSN -c true"
+  "$BINDIR/run_erl" -daemon "$PIPE_DIR" "$RUNNER_LOG_DIR" \
+    "exec $SCRIPT -n $REL_NAME -e $ERTS_VSN -r $REL_VSN -c true"
+else
+  export ROOTDIR="$RELEASE_ROOT_DIR"  
+  CODE_LOADING_MODE="${CODE_LOADING_MODE:-embedded}"
+  REL_DIR="$RELEASE_ROOT_DIR/clients/$REL_NAME/releases/$REL_VSN"
+  BOOTFILE="$REL_DIR/load"
+  VMARGS_PATH=$(add_path vm.args $VMARGS_PATH)
+  RELX_CONFIG_PATH=$(add_path sys.config $RELX_CONFIG_PATH)
+  ERTS_LIB_DIR="$(dirname "$ERTS_DIR")/lib"
+  echo $ERTS_DIR
+  echo $BINDIR
+  echo $RELEASE_ROOT_DIR
+  cd "$RELEASE_ROOT_DIR/clients/$REL_NAME"
+  
+  echo "$BINDIR/erlexec" \
+       -boot "$BOOTFILE" -mode "$CODE_LOADING_MODE" \
+       -boot_var ERTS_LIB_DIR "$ERTS_LIB_DIR" \
+       -config "$RELX_CONFIG_PATH" \
+       -args_file "$VMARGS_PATH" \
+       -pa ${__code_paths}
+
+  exec "$BINDIR/erlexec" \
+       -boot "$BOOTFILE" -mode "$CODE_LOADING_MODE" \
+       -boot_var ERTS_LIB_DIR "$ERTS_LIB_DIR" \
+       -config "$RELX_CONFIG_PATH" \
+       -args_file "$VMARGS_PATH" \
+       -pa ${__code_paths} -- "$@"
+fi

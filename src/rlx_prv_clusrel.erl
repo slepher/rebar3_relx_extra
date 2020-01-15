@@ -31,7 +31,7 @@
 -include_lib("relx/include/relx.hrl").
 
 -define(PROVIDER, clusrel).
--define(DEPS, [release]).
+-define(DEPS, [app_assembler]).
 -define(HOOKS,  {[], []}).
 %%============================================================================
 %% API
@@ -111,6 +111,8 @@ realize_sub_releases([{SubReleaseName, SubReleaseVsn}|T], DepGraph, InclApps, St
 realize_sub_releases([], _DepGraph, _InclApps, State) ->
     {ok, State}.
 
+
+%% copy booter file from rebar3_relx_ext temple
 write_cluster_booter_file(State, Release) ->
     ReleaseName = rlx_release:name(Release),
     OutputDir = rlx_state:output_dir(State),
@@ -141,7 +143,7 @@ write_cluster_files(State, SubReleases, Release) ->
             ReleaseVsn = rlx_release:vsn(Release),
             Meta = {cluster, ReleaseName, ReleaseVsn, SubReleaseDatas, Apps},
             ReleaseFile = filename:join([OutputDir, "clus"]),
-            ReleaseFile1 = filename:join([ReleaseDir, "clus"]),
+            ReleaseFile1 = filename:join([ReleaseDir, atom_to_list(ReleaseName) ++ ".clus"]),
             ok = ec_file:write_term(ReleaseFile, Meta),
             ok = ec_file:write_term(ReleaseFile1, Meta);
         {error, Reason} ->

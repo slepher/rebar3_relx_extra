@@ -34,7 +34,12 @@ update_rlx(State) ->
     RelxExt = rebar_state:get(State, relx_ext, []),
     case merge_relx_ext(Relx, RelxExt) of
         {ok, Relx1} ->
-            Relx2 = [{add_providers, [rlx_prv_release_ext, rlx_prv_clusrel, rlx_prv_clusup, rlx_prv_clustar, rlx_prv_archive_ext]}|Relx1],
+            Relx2 = [{add_providers, [rlx_prv_release_ext,
+                                      rlx_prv_archive_ext, 
+                                      rlx_prv_app_assembler,
+                                      rlx_prv_clusrel, 
+                                      rlx_prv_clusup, 
+                                      rlx_prv_clustar]}|Relx1],
             {ok, rebar_state:set(State, relx, Relx2)};
         {error, Reason} ->
             {error, Reason}

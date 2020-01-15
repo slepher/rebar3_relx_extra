@@ -99,7 +99,7 @@ update_tar(State, SubReleases, TempDir, OutputDir, Name, Vsn, ErtsVersion) ->
     TarFile = filename:join(OutputDir, Name++"-"++Vsn++".tar.gz"),
     file:rename(filename:join(OutputDir, Name++".tar.gz"), TarFile),
     erl_tar:extract(TarFile, [{cwd, TempDir}, compressed]),
-    BinFiles = bin_files(OutputDir),
+    BinFiles = cluster_files(OutputDir),
     OverlayVars = rlx_prv_overlay:generate_overlay_vars(State, Release),
     OverlayFiles = overlay_files(OverlayVars, rlx_state:get(State, overlay, undefined), OutputDir),
     SubReleaseFiles = 
@@ -130,8 +130,11 @@ update_tar(State, SubReleases, TempDir, OutputDir, Name, Vsn, ErtsVersion) ->
     ec_file:remove(TempDir, [recursive]),
     {ok, State}.
 
-bin_files(OutputDir) ->
-    [{"bin", filename:join([OutputDir, "bin"])}, {"clus", filename:join([OutputDir, "clus"])}].
+cluster_files(OutputDir) ->
+    [{"bin", filename:join([OutputDir, "bin"])}, 
+     {"clus", filename:join([OutputDir, "clus"])}, 
+     {"clusup", filename:join([OutputDir, "clusup"])},
+     {"releases",  filename:join([OutputDir, "releases"])}].
 
 sub_release_files(State, OutputDir) ->
     {RelName, RelVsn} = rlx_state:default_configured_release(State),

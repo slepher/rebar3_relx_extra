@@ -215,13 +215,14 @@ get_releases(ClusterName, ClusterVsn, Clusters) ->
     proplists:get_value({ClusterName, ClusterVsn}, Clusters).
 
 make_upfrom_cluster_script(ClusterName, ClusterVsn, Releases, Apps, UpFromReleases, UpFromApps, State) ->
-    ReleasesChanged = changed(Releases, UpFromReleases),
+    Releases1 = lists:map(fun({Name, Vsn, _Apps}) -> {Name, Vsn} end, Releases),
+    UpFromReleases1 = lists:map(fun({Name, Vsn, _Apps}) -> {Name, Vsn} end, UpFromReleases),
+    ReleasesChanged = changed(Releases1, UpFromReleases1),
     AppsChanged = changed(Apps, UpFromApps),
     Meta = {clusup, ClusterName, ReleasesChanged, AppsChanged},
     write_clusup_file(State, ClusterName, ClusterVsn, Meta).
     
 changed(Metas, MetasFrom) ->
-    %% io:format("apps is ~p~p ~n", [Metas, MetasFrom]),
     {Changes, Adds, Dels} = 
         lists:foldl(
           fun({Name, Vsn}, {ChangesAcc, AddsAcc, DelsAcc}) ->
@@ -243,7 +244,7 @@ changed(Metas, MetasFrom) ->
 
 make_upfrom_release_scripts(ClusterName, Releases, UpFromReleases, State) ->
     lists:foldl(
-      fun({RelName, RelVsn}, {ok, StateAcc}) ->
+      fun({RelName, RelVsn, _RelApps}, {ok, StateAcc}) ->
               case proplists:get_value(RelName, UpFromReleases) of
                   undefined ->
                       {ok, State};
@@ -371,9 +372,9 @@ make_upfrom_script(State, Release, UpFrom) ->
             ?RLX_ERROR({relup_script_generation_error, Module, Errors})
     end.
 
-write_clusup_file(State, ClusterName, ClusterVsn, Clusup) ->
+write_clusup_file(State, _ClusterName, ClusterVsn, Clusup) ->
     OutputDir = rlx_state:output_dir(State),
-    ClusupFile1 = filename:join([OutputDir, "releases", ClusterVsn, atom_to_list(ClusterName) ++  ".clusup"]),
+    ClusupFile1 = filename:join([OutputDir, "releases", ClusterVsn, "clusup"]),
     ClusupFile2 = filename:join([OutputDir, "clusup"]),
     ok = ec_file:write_term(ClusupFile1, Clusup),
     ok = ec_file:write_term(ClusupFile2, Clusup).

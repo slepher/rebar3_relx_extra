@@ -31,7 +31,7 @@
 -include_lib("relx/include/relx.hrl").
 
 -define(PROVIDER, clusrel).
--define(DEPS, [resolve_release]).
+-define(DEPS, [release]).
 -define(HOOKS,  {[], []}).
 %%============================================================================
 %% API
@@ -77,6 +77,7 @@ create_rel_files(State, Release0, OutputDir) ->
         undefined ->
             {error, no_releases};
         SubReleases ->
+            write_cluster_booter_file(State, Release0),
             write_cluster_files(State, SubReleases, Release0),
             InclApps = incl_apps(Config),
             DepGraph = create_dep_graph(State),
@@ -109,6 +110,21 @@ realize_sub_releases([{SubReleaseName, SubReleaseVsn}|T], DepGraph, InclApps, St
     end;
 realize_sub_releases([], _DepGraph, _InclApps, State) ->
     {ok, State}.
+
+write_cluster_booter_file(State, Release) ->
+    ReleaseName = rlx_release:name(Release),
+    OutputDir = rlx_state:output_dir(State),
+    Source = filename:join([code:priv_dir(rebar3_relx_extra), "templates", "booter"]),
+    Bindir = filename:join([OutputDir, "bin"]),
+    case ec_file:exists(Bindir) of
+        true ->
+            ok = ec_file:remove(Bindir, [recursive]);
+        false ->
+            ok
+    end,
+    ok = ec_file:mkdir_p(Bindir),
+    Target = filename:join([Bindir, ReleaseName]),
+    ok = ec_file:copy(Source, Target).
 
 write_cluster_files(State, SubReleases, Release) ->
     SubReleaseDatas = 
@@ -152,14 +168,12 @@ write_release_files(Release, ReleaseMeta, State, Variables, CodePath) ->
     SubReleaseDir = sub_release_dir(Release, OutputDir),
     ok = ec_file:mkdir_p(SubOutputDir),
     ok = ec_file:mkdir_p(SubReleaseDir),
-    ok = ec_file:mkdir_p(filename:join([SubOutputDir, "bin"])),
     ReleaseName = rlx_release:name(Release),
     ReleaseVsn = rlx_release:vsn(Release),
     RelFilename = atom_to_list(ReleaseName),
     RelLoadFileName = "load",
     {release, ErlInfo, ErtsInfo, Apps} = ReleaseMeta,
     ReleaseLoadMeta = {release, ErlInfo, ErtsInfo, apps_load(Apps)},
-    Erts = rlx_release:erts(Release),
     copy_base_file(OutputDir, SubOutputDir),
     case write_rel_files(RelFilename, ReleaseMeta, SubReleaseDir, SubOutputDir, Variables, CodePath) of
         ok ->
@@ -168,7 +182,7 @@ write_release_files(Release, ReleaseMeta, State, Variables, CodePath) ->
                     generate_start_erl_data_file(Release, SubOutputDir),
                     case write_rel_files(RelLoadFileName, ReleaseLoadMeta, SubReleaseDir, SubOutputDir, Variables, CodePath) of
                         ok ->
-                            rlx_release_bin:write_bin_file(State, Release, Erts, SubOutputDir);
+                            ok;
                         {error, Reason} ->
                             {error, Reason}
                     end;
@@ -191,28 +205,25 @@ generate_start_erl_data_file(Release, OutputDir) ->
     StartErl = filename:join([OutputDir, "releases", "start_erl.data"]),
     ok = file:write_file(StartErl, Data).
 
-copy_file_from(Source, Target, Path) ->
-    FromFile = filename:join([Source, Path]),
-    ToFile = filename:join([Target, Path]),
-    ok = ec_file:copy(FromFile, ToFile).
+%% copy_file_from(Source, Target, Path) ->
+%%     FromFile = filename:join([Source, Path]),
+%%     ToFile = filename:join([Target, Path]),
+%%     ok = ec_file:copy(FromFile, ToFile).
 
-copy_base_file(OutputDir, SubOutputDir) ->
+copy_base_file(_OutputDir, SubOutputDir) ->
     Symlink = filename:join([SubOutputDir, "lib"]),
     case ec_file:exists(Symlink) of
         true ->
             ok;
         false ->
             ok = file:make_symlink("../../lib", Symlink)
-    end,
-    copy_file_from(OutputDir, SubOutputDir, filename:join(["bin", "install_upgrade.escript"])),
-    copy_file_from(OutputDir, SubOutputDir, filename:join(["bin", "nodetool"])).
+    end.
+    %% copy_file_from(OutputDir, SubOutputDir, filename:join(["bin", "install_upgrade.escript"])),
+    %% copy_file_from(OutputDir, SubOutputDir, filename:join(["bin", "nodetool"])).
 
-write_rel_files(RelFilename, Meta, ReleaseDir, OutputDir, Variables, CodePath) ->
+write_rel_files(RelFilename, Meta, ReleaseDir, _OutputDir, Variables, CodePath) ->
     ReleaseFile1 = filename:join([ReleaseDir, RelFilename ++ ".rel"]),
     ok = ec_file:write_term(ReleaseFile1, Meta),
-    Bootfile = RelFilename ++ ".boot",
-    ReleaseBootfile = filename:join([ReleaseDir, Bootfile]),
-    BinBootfile = filename:join([OutputDir, "bin", Bootfile]),
     Options = [{path, [ReleaseDir | CodePath]},
                {outdir, ReleaseDir},
                {variables, Variables},
@@ -222,12 +233,10 @@ write_rel_files(RelFilename, Meta, ReleaseDir, OutputDir, Variables, CodePath) -
                                       systools:make_script(RelFilename, CorrectedOptions)
                               end) of
         ok ->
-            ok = ec_file:copy(ReleaseBootfile, BinBootfile),
             ok;
         error ->
             ?RLX_ERROR({release_script_generation_error, ReleaseFile1});
         {ok, _, []} ->
-            ok = ec_file:copy(ReleaseBootfile, BinBootfile),
             ok;
         {ok,Module,Warnings} ->
             ?RLX_ERROR({release_script_generation_warn, Module, Warnings});

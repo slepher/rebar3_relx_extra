@@ -52,6 +52,7 @@ add_path() {
 
 [ -z $SCRIPT ] && SCRIPT=$0
 SCRIPT_DIR="$(cd `dirname "$SCRIPT"` && pwd -P)"
+SCRIPT_NAME=$(basename $SCRIPT)
 RELEASE_ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 
 VSN_FILE=$RELEASE_ROOT_DIR/clients/$REL_NAME/releases/start_erl.data
@@ -77,7 +78,7 @@ then
   [ ! -d $PIPE_DIR ] && mkdir -p $PIPE_DIR
   [ ! -d $RUNNER_LOG_DIR ] && mkdir -p $RUNNER_LOG_DIR
 
-  HEART_COMMAND="$SCRIPT_DIR/booter -n $REL_NAME"
+  HEART_COMMAND="$SCRIPT_DIR/$SCRIPT_NAME -n $REL_NAME"
   echo $HEART_COMMAND
   export HEART_COMMAND
   echo "$BINDIR/run_erl" -daemon "$PIPE_DIR" "$RUNNER_LOG_DIR" \

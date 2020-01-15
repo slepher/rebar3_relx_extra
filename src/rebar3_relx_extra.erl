@@ -21,8 +21,9 @@ init(State) ->
     {ok, State1} = rebar3_prv_release_ext:init(State),
     {ok, State2} = rebar3_prv_clusrel:init(State1),
     {ok, State3} = rebar3_prv_clusup:init(State2),
-    {ok, State4} = rebar3_prv_tar_ext:init(State3),
-    {ok, State4}.
+    {ok, State4} = rebar3_prv_clustar:init(State3),
+    {ok, State5} = rebar3_prv_tar_ext:init(State4),
+    {ok, State5}.
 
 %%--------------------------------------------------------------------
 %% @doc

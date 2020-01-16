@@ -79,9 +79,7 @@ create_rel_files(State, Release0, OutputDir) ->
         SubReleases ->
             write_cluster_booter_file(State, Release0),
             write_cluster_files(State, SubReleases, Release0),
-            InclApps = incl_apps(Config),
-            DepGraph = create_dep_graph(State),
-            case realize_sub_releases(SubReleases, DepGraph, InclApps, State) of
+            case rlx_ext_release_lib:realize_sub_releases(Release0, SubReleases, State) of
                 {ok, State1} ->
                     Acc1 = 
                         lists:map(
@@ -99,18 +97,6 @@ create_rel_files(State, Release0, OutputDir) ->
                     {error, Reason}
             end
     end.
-
-realize_sub_releases([{SubReleaseName, SubReleaseVsn}|T], DepGraph, InclApps, State) ->
-    case realized_release(State, DepGraph, InclApps, SubReleaseName, SubReleaseVsn) of
-        {ok, RealizedSubRelease} ->
-            State1 = rlx_state:add_realized_release(State, RealizedSubRelease),
-            realize_sub_releases(T, DepGraph, InclApps, State1);
-        {error, Reason} ->
-            {error, Reason}
-    end;
-realize_sub_releases([], _DepGraph, _InclApps, State) ->
-    {ok, State}.
-
 
 %% copy booter file from rebar3_relx_ext temple
 write_cluster_booter_file(State, Release) ->
@@ -246,31 +232,6 @@ write_rel_files(RelFilename, Meta, ReleaseDir, _OutputDir, Variables, CodePath) 
             ?RLX_ERROR({release_script_generation_error, Module, Error})
     end.
 
-
-realized_release(State, DepGraph, InclApps, Name, Vsn) ->
-    Release = rlx_state:get_configured_release(State, Name, Vsn),
-    {ok, Release1} = rlx_release:goals(Release, InclApps),
-    Goals = rlx_release:goals(Release1),
-    case Goals of
-        [] ->
-            {error, {Name, no_goals_specified}};
-        _ ->
-            case rlx_depsolver:solve(DepGraph, Goals) of
-                {ok, Pkgs} ->
-                    rlx_release:realize(Release, Pkgs, rlx_state:available_apps(State));
-                {error, Error} ->
-                    {error, {Name, failed_solve, Error}}
-            end
-    end.
-
-incl_apps(Config) ->
-    case proplists:get_value(incl_apps, Config) of
-        undefined ->
-            [];
-        Apps ->
-            Apps
-    end.
-
 sub_releases_overlay(Release, State) ->
     Config = rlx_release:config(Release),
     case proplists:get_value(ext, Config) of
@@ -324,18 +285,3 @@ make_boot_script_variables(State) ->
         _ ->
             [{"ERTS_LIB_DIR", code:lib_dir()}]
     end.
-
-
-create_dep_graph(State) ->
-    Apps = rlx_state:available_apps(State),
-    Graph0 = rlx_depsolver:new_graph(),
-    lists:foldl(fun(App, Graph1) ->
-                        AppName = rlx_app_info:name(App),
-                        AppVsn = rlx_app_info:vsn(App),
-                        Deps = rlx_app_info:active_deps(App) ++
-                            rlx_app_info:library_deps(App),
-                        rlx_depsolver:add_package_version(Graph1,
-                                                          AppName,
-                                                          AppVsn,
-                                                          Deps)
-                end, Graph0, Apps).

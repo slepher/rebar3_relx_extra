@@ -178,7 +178,7 @@ copy_app_directories_to_output(State, Release, OutputDir) ->
         [E | _] ->
             E;
         [] ->
-            include_erts(State, Release, OutputDir)
+            create_release_info(State, Release, OutputDir)
     end.
 
 prepare_applications(State, Apps) ->
@@ -356,10 +356,26 @@ copy_dir(SourceDir, TargetDir, ExcludeFiles) ->
                                                      filename:basename(F)]), [{file_info, [mode, time]}])
                   end, SourceFiles -- ExcludeFiles).
 
+
+create_release_info(State0, Release0, OutputDir) ->
+    RelName = atom_to_list(rlx_release:name(Release0)),
+    ReleaseDir = rlx_util:release_output_dir(State0, Release0),
+    ReleaseFile = filename:join([ReleaseDir, RelName ++ ".rel"]),
+    ok = ec_file:mkdir_p(ReleaseDir),
+    Release1 = rlx_release:relfile(Release0, ReleaseFile),
+    State1 = rlx_state:update_realized_release(State0, Release1),
+    case rlx_release:metadata(Release1) of
+        {ok, Meta} ->
+            ok = ec_file:write_term(ReleaseFile, Meta),
+            include_erts(State1, Release1, OutputDir, ReleaseDir);
+        E ->
+            E
+    end.
+
 %% @doc Optionally add erts directory to release, if defined.
--spec include_erts(rlx_state:t(), rlx_release:t(),  file:name()) ->
+-spec include_erts(rlx_state:t(), rlx_release:t(),  file:name(), file:name()) ->
                           {ok, rlx_state:t()} | relx:error().
-include_erts(State, Release, OutputDir) ->
+include_erts(State, Release, OutputDir, RelDir) ->
     Prefix = case rlx_state:get(State, include_erts, true) of
                  false ->
                      false;
@@ -371,7 +387,7 @@ include_erts(State, Release, OutputDir) ->
 
     case Prefix of
         false ->
-            {ok, State};
+            make_boot_script(State, Release, OutputDir, RelDir);
         _ ->
             ec_cmd_log:info(rlx_state:log(State), "Including Erts from ~s~n", [Prefix]),
             ErtsVersion = rlx_release:erts(Release),
@@ -407,8 +423,59 @@ include_erts(State, Release, OutputDir) ->
                               false -> ok
                             end
                     end,
-                    {ok, State}
+                    make_boot_script(State, Release, OutputDir, RelDir)
             end
+    end.
+
+-spec make_boot_script(rlx_state:t(), rlx_release:t(), file:name(), file:name()) ->
+                              {ok, rlx_state:t()} | relx:error().
+make_boot_script(State, Release, OutputDir, RelDir) ->
+    Options = [{path, [RelDir | rlx_util:get_code_paths(Release, OutputDir)]},
+               {outdir, RelDir},
+               {variables, make_boot_script_variables(State)},
+               no_module_tests, silent],
+    Name = erlang:atom_to_list(rlx_release:name(Release)),
+    ReleaseFile = filename:join([RelDir, Name ++ ".rel"]),
+    case rlx_util:make_script(Options,
+                    fun(CorrectedOptions) ->
+                            systools:make_script(Name, CorrectedOptions)
+                    end) of
+        ok ->
+            ec_cmd_log:info(rlx_state:log(State),
+                             "release successfully created!"),
+            {ok, State};
+        error ->
+            ?RLX_ERROR({release_script_generation_error, ReleaseFile});
+        {ok, _, []} ->
+            ec_cmd_log:info(rlx_state:log(State),
+                          "release successfully created!"),
+            {ok, State};
+        {ok,Module,Warnings} ->
+            ?RLX_ERROR({release_script_generation_warn, Module, Warnings});
+        {error,Module,Error} ->
+            ?RLX_ERROR({release_script_generation_error, Module, Error})
+    end.
+
+make_boot_script_variables(State) ->
+    % A boot variable is needed when {include_erts, false} and the application
+    % directories are split between the release/lib directory and the erts/lib
+    % directory.
+    % The built-in $ROOT variable points to the erts directory on Windows
+    % (dictated by erl.ini [erlang] Rootdir=) and so a boot variable is made
+    % pointing to the release directory
+    % On non-Windows, $ROOT is set by the ROOTDIR environment variable as the
+    % release directory, so a boot variable is made pointing to the erts
+    % directory.
+    % NOTE the boot variable can point to either the release/erts root directory
+    % or the release/erts lib directory, as long as the usage here matches the
+    % usage used in the start up scripts
+    case {os:type(), rlx_state:get(State, include_erts, true)} of
+        {{win32, _}, false} ->
+            [{"RELEASE_DIR", rlx_state:output_dir(State)}];
+        {{win32, _}, true} ->
+            [];
+        _ ->
+            [{"ERTS_LIB_DIR", code:lib_dir()}]
     end.
 
 erl_script(ErtsVsn) ->

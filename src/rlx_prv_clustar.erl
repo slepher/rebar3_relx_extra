@@ -29,7 +29,7 @@
          format_error/1]).
 
 -define(PROVIDER, clustar).
--define(DEPS, [clusrel]).
+-define(DEPS, [resolve_release]).
 
 -include_lib("relx/include/relx.hrl").
 
@@ -52,7 +52,12 @@ do(State) ->
     OutputDir = rlx_state:output_dir(State),
     Config = rlx_release:config(Release),
     SubReleases = proplists:get_value(ext, Config),
-    make_tar(State, Release, SubReleases, OutputDir).
+    case rlx_ext_release_lib:realize_sub_releases(Release, SubReleases, State) of
+        {ok, State1} ->
+            make_tar(State1, Release, SubReleases, OutputDir);
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 make_tar(State, Release, SubReleases, OutputDir) ->
     Name = atom_to_list(rlx_release:name(Release)),
@@ -79,7 +84,8 @@ make_tar(State, Release, SubReleases, OutputDir) ->
             try
                 update_tar(State, SubReleases, TempDir, OutputDir, Name, Vsn, ErtsVersion)
             catch
-                E:R ->
+                E:R:Stacktrace ->
+                    io:format("trace is ~p~n", [Stacktrace]),
                     ec_file:remove(TempDir, [recursive]),
                     ?RLX_ERROR({tar_generation_error, E, R})
             end;
@@ -99,7 +105,7 @@ update_tar(State, SubReleases, TempDir, OutputDir, Name, Vsn, ErtsVersion) ->
     TarFile = filename:join(OutputDir, Name++"-"++Vsn++".tar.gz"),
     file:rename(filename:join(OutputDir, Name++".tar.gz"), TarFile),
     erl_tar:extract(TarFile, [{cwd, TempDir}, compressed]),
-    BinFiles = cluster_files(OutputDir),
+    BinFiles = cluster_files(OutputDir, Vsn),
     OverlayVars = rlx_prv_overlay:generate_overlay_vars(State, Release),
     OverlayFiles = overlay_files(OverlayVars, rlx_state:get(State, overlay, undefined), OutputDir),
     SubReleaseFiles = 
@@ -130,11 +136,11 @@ update_tar(State, SubReleases, TempDir, OutputDir, Name, Vsn, ErtsVersion) ->
     ec_file:remove(TempDir, [recursive]),
     {ok, State}.
 
-cluster_files(OutputDir) ->
+cluster_files(OutputDir, RelVsn) ->
     [{"bin", filename:join([OutputDir, "bin"])}, 
      {"clus", filename:join([OutputDir, "clus"])}, 
      {"clusup", filename:join([OutputDir, "clusup"])},
-     {"releases",  filename:join([OutputDir, "releases"])}].
+     {filename:join(["releases", RelVsn]),  filename:join([OutputDir, "releases", RelVsn])}].
 
 sub_release_files(State, OutputDir) ->
     {RelName, RelVsn} = rlx_state:default_configured_release(State),
@@ -149,8 +155,7 @@ sub_release_files(State, OutputDir) ->
      {filename:join([SubReleaseDir, "releases", "start_erl.data"]),
       filename:join([SubOutputDir, "releases", "start_erl.data"])},
      {filename:join([SubReleaseDir, "releases", "RELEASES"]),
-      filename:join([SubOutputDir, "releases", "RELEASES"])},
-     {filename:join([SubReleaseDir, "bin"]), filename:join([SubOutputDir, "bin"])} |
+      filename:join([SubOutputDir, "releases", "RELEASES"])} |
      ConfigFiles ++ OverlayFiles].
 
 format_error({tar_unknown_generation_error, Module, Vsn}) ->

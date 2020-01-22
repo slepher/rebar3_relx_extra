@@ -29,7 +29,7 @@
          format_error/1]).
 
 -define(PROVIDER, clustar).
--define(DEPS, [resolve_release]).
+-define(DEPS, [clusrel]).
 
 -include_lib("relx/include/relx.hrl").
 
@@ -52,89 +52,81 @@ do(State) ->
     OutputDir = rlx_state:output_dir(State),
     Config = rlx_release:config(Release),
     SubReleases = proplists:get_value(ext, Config),
-    case rlx_ext_release_lib:realize_sub_releases(Release, SubReleases, State) of
-        {ok, State1} ->
-            make_tar(State1, Release, SubReleases, OutputDir);
-        {error, Reason} ->
-            {error, Reason}
-    end.
+    make_tar(State, Release, SubReleases, OutputDir).
 
 make_tar(State, Release, SubReleases, OutputDir) ->
-    Name = atom_to_list(rlx_release:name(Release)),
+    Name = rlx_release:name(Release),
     Vsn = rlx_release:vsn(Release),
-    ErtsVersion = rlx_release:erts(Release),
-    Opts = [{path, [filename:join([OutputDir, "lib", "*", "ebin"])]},
-            {dirs, [include | maybe_src_dirs(State)]},
-            {outdir, OutputDir} |
-            case rlx_state:get(State, include_erts, true) of
-                true ->
-                    Prefix = code:root_dir(),
-                    ErtsDir = filename:join([Prefix]),
-                    [{erts, ErtsDir}];
-                false ->
-                    [];
-                Prefix ->
-                    ErtsDir = filename:join([Prefix]),
-                    [{erts, ErtsDir}]
-            end],
-    case systools:make_tar(filename:join([OutputDir, "releases", Vsn, Name]),
-                           Opts) of
-        ok ->
-            TempDir = ec_file:insecure_mkdtemp(),
-            try
-                update_tar(State, SubReleases, TempDir, OutputDir, Name, Vsn, ErtsVersion)
-            catch
-                E:R:Stacktrace ->
-                    io:format("trace is ~p~n", [Stacktrace]),
-                    ec_file:remove(TempDir, [recursive]),
-                    ?RLX_ERROR({tar_generation_error, E, R})
-            end;
-        {ok, Module, Warnings} ->
-            ?RLX_ERROR({tar_generation_warn, Module, Warnings});
-        error ->
-            ?RLX_ERROR({tar_unknown_generation_error, Name, Vsn});
-        {error, Module, Errors} ->
-            ?RLX_ERROR({tar_generation_error, Module, Errors})
-    end.
-
-update_tar(State, SubReleases, TempDir, OutputDir, Name, Vsn, ErtsVersion) ->
-    IncludeErts = rlx_state:get(State, include_erts, true),
-    SystemLibs = rlx_state:get(State, system_libs, true),
-    {RelName, RelVsn} = rlx_state:default_configured_release(State),
-    Release = rlx_state:get_realized_release(State, RelName, RelVsn),
-    TarFile = filename:join(OutputDir, Name++"-"++Vsn++".tar.gz"),
-    file:rename(filename:join(OutputDir, Name++".tar.gz"), TarFile),
-    erl_tar:extract(TarFile, [{cwd, TempDir}, compressed]),
-    BinFiles = cluster_files(OutputDir, Vsn),
-    OverlayVars = rlx_prv_overlay:generate_overlay_vars(State, Release),
-    OverlayFiles = overlay_files(OverlayVars, rlx_state:get(State, overlay, undefined), OutputDir),
+    TarFile = filename:join(OutputDir, atom_to_list(Name) ++ "-" ++ Vsn ++ ".tar.gz"),
+    Files = tar_files(State, Release, SubReleases, OutputDir),
+    ok = erl_tar:create(TarFile, Files, [dereference,compressed]),
+    ec_cmd_log:info(rlx_state:log(State), "tarball ~s successfully created!~n", [TarFile]),
+    {ok, State}.
+    
+tar_files(State, Release, SubReleases, OutputDir) ->
+    Vsn = rlx_release:vsn(Release),
+    Applications = rlx_release:applications(Release),
+    ErtsVsn = rlx_release:erts(Release),
+    Paths = paths(State, OutputDir),
+    ApplicationsFiles = 
+        lists:foldl(
+          fun({AppName, AppVsn}, Acc) ->
+                  {ok, ApplicationFiles} = 
+                      rlx_ext_application_lib:application_files(
+                        AppName, AppVsn, Paths, [{dirs, [include | maybe_src_dirs(State)]}, {output_dir, OutputDir}]),
+                  case AppName of
+                      ib_client_node ->
+                          io:format("files is ~p~n", [ApplicationFiles]);
+                      _ ->
+                          ok
+                  end,
+                  ApplicationFiles ++ Acc
+          end, [], Applications),
     SubReleaseFiles = 
         lists:foldl(
           fun({SubReleaseName, SubReleaseVsn}, Acc) ->
                   State1 = rlx_ext_lib:sub_release_state(State, Release, SubReleaseName, SubReleaseVsn),
                   sub_release_files(State1, OutputDir) ++ Acc
           end, [], SubReleases),
-    ok =
-        erl_tar:create(TarFile,
-                       case IncludeErts of
-                           false ->
-                               %% Remove system libs from tarball
-                               case SystemLibs of
-                                   false ->
-                                       Libs = filelib:wildcard("*", filename:join(TempDir, "lib")),
-                                       AllSystemLibs = filelib:wildcard("*", code:lib_dir()),
-                                       [{filename:join("lib", LibDir), filename:join([TempDir, "lib", LibDir])} ||
-                                           LibDir <- lists:subtract(Libs, AllSystemLibs)];
-                                   _ ->
-                                       [{"lib", filename:join(TempDir, "lib")}]
-                               end;
-                           _ ->
-                               [{"lib", filename:join(TempDir, "lib")},
-                                {"erts-"++ErtsVersion, filename:join(OutputDir, "erts-"++ErtsVersion)}]
-                       end++OverlayFiles ++ SubReleaseFiles ++ BinFiles, [dereference,compressed]),
-    ec_cmd_log:info(rlx_state:log(State), "tarball ~s successfully created!~n", [TarFile]),
-    ec_file:remove(TempDir, [recursive]),
-    {ok, State}.
+    BinFiles = cluster_files(OutputDir, Vsn),
+    OverlayVars = rlx_prv_overlay:generate_overlay_vars(State, Release),
+    OverlayFiles = overlay_files(OverlayVars, rlx_state:get(State, overlay, undefined), OutputDir),
+    ErtsFiles = erts_files(ErtsVsn, State),
+    ApplicationsFiles ++ SubReleaseFiles ++ OverlayFiles ++ ErtsFiles ++ BinFiles.
+
+paths(State, OutputDir) ->
+    SystemLibs = rlx_state:get(State, system_libs, true),
+    Paths = rlx_ext_application_lib:path([{path, [filename:join([OutputDir, "lib", "*", "ebin"])]}]),
+        case SystemLibs of
+            true ->
+                Paths;
+            false ->
+                lists:filter(
+                  fun(Path) ->
+                          not lists:prefix(code:lib_dir(), Path)
+                  end, Paths)
+        end.
+
+erts_files(ErtsVsn, State) ->
+    case erts_prefix(State) of
+        false ->
+            [];
+        Prefix ->
+            ErtsDir = filename:join([Prefix]),
+            FromDir = filename:join([ErtsDir, "erts-" ++ ErtsVsn, "bin"]),
+	    ToDir = filename:join("erts-" ++ ErtsVsn, "bin"),
+            [{ToDir, FromDir}]
+    end.
+
+erts_prefix(State) ->
+    case rlx_state:get(State, include_erts, true) of
+        true ->
+            code:root_dir();
+        false ->
+            false;
+        Prefix ->
+            Prefix
+    end.
 
 cluster_files(OutputDir, RelVsn) ->
     [{"bin", filename:join([OutputDir, "bin"])}, 

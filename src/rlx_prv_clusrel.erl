@@ -54,7 +54,6 @@ do(State) ->
     OutputDir = rlx_state:output_dir(State),
     case create_rel_files(State, Release, OutputDir) of
         {ok, State1} ->
-            io:format("ok~n"),
             sub_releases_overlay(Release, State1);
         {error, Reason} ->
             {error, Reason}

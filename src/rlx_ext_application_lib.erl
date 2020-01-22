@@ -14,6 +14,7 @@
 %% API
 -export([path/0, path/1]).
 -export([application_files/3, application_files/4]).
+-export([add_file/4]).
 
 %%%===================================================================
 %%% API
@@ -47,7 +48,7 @@ application_files(Name, Vsn, Path, Flags) ->
 %%% Internal functions
 %%%===================================================================
 app_files(#application{modules = Modules, dir = AppDir}, Name, Vsn, Flags) ->
-    ToDir = filename:join("lib", Name ++ "-" ++ Vsn),
+    ToDir = filename:join("lib", to_list(Name) ++ "-" ++ Vsn),
     ADir = appDir(AppDir),
     Files0 = 
         lists:foldl(
@@ -56,9 +57,9 @@ app_files(#application{modules = Modules, dir = AppDir}, Name, Vsn, Flags) ->
                   ModuleFilename = to_list(Module) ++ Ext,
                   add_file(filename:join([ToDir, "ebin"]), AppDir, ModuleFilename, Acc)
           end, [], Modules),
-    Files1 = add_dir_if(ADir, ToDir, "priv", Files0),
+    Files1 = add_dir_if(ToDir, ADir, "priv", Files0),
     Files2 = add_file(filename:join([ToDir, "ebin"]), AppDir,  to_list(Name) ++ ".app", Files1),
-    add_flags_dir(ADir, ToDir, Flags, Files2).
+    add_flags_dir(ToDir, ADir, Flags, Files2).
 
 add_file(Target, Source, Filename, Files) ->
     [{filename:join([Target, Filename]), filename:join([Source, Filename])}|Files].
@@ -72,7 +73,7 @@ add_dir_if(Target, Source, Dir, Files) ->
 	    Files
     end.
 
-add_flags_dir(ADir, ToDir, Flags, Files) ->
+add_flags_dir(ToDir, ADir, Flags, Files) ->
     case get_flag(dirs,Flags) of
         {dirs,Dirs} ->
             lists:foldl(

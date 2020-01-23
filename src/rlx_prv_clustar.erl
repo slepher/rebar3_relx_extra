@@ -64,6 +64,7 @@ make_tar(State, Release, SubReleases, OutputDir) ->
     {ok, State}.
     
 tar_files(State, Release, SubReleases, OutputDir) ->
+    Name = rlx_release:name(Release),
     Vsn = rlx_release:vsn(Release),
     Applications = rlx_release:applications(Release),
     ErtsVsn = rlx_release:erts(Release),
@@ -74,12 +75,6 @@ tar_files(State, Release, SubReleases, OutputDir) ->
                   {ok, ApplicationFiles} = 
                       rlx_ext_application_lib:application_files(
                         AppName, AppVsn, Paths, [{dirs, [include | maybe_src_dirs(State)]}, {output_dir, OutputDir}]),
-                  case AppName of
-                      ib_client_node ->
-                          io:format("files is ~p~n", [ApplicationFiles]);
-                      _ ->
-                          ok
-                  end,
                   ApplicationFiles ++ Acc
           end, [], Applications),
     SubReleaseFiles = 
@@ -88,7 +83,7 @@ tar_files(State, Release, SubReleases, OutputDir) ->
                   State1 = rlx_ext_lib:sub_release_state(State, Release, SubReleaseName, SubReleaseVsn),
                   sub_release_files(State1, OutputDir) ++ Acc
           end, [], SubReleases),
-    BinFiles = cluster_files(OutputDir, Vsn),
+    BinFiles = cluster_files(OutputDir, Name, Vsn),
     OverlayVars = rlx_prv_overlay:generate_overlay_vars(State, Release),
     OverlayFiles = overlay_files(OverlayVars, rlx_state:get(State, overlay, undefined), OutputDir),
     ErtsFiles = erts_files(ErtsVsn, State),
@@ -128,11 +123,12 @@ erts_prefix(State) ->
             Prefix
     end.
 
-cluster_files(OutputDir, RelVsn) ->
-    [{"bin", filename:join([OutputDir, "bin"])}, 
-     {"clus", filename:join([OutputDir, "clus"])}, 
-     {"clusup", filename:join([OutputDir, "clusup"])},
-     {filename:join(["releases", RelVsn]),  filename:join([OutputDir, "releases", RelVsn])}].
+cluster_files(OutputDir, RelName, RelVsn) ->
+    BinFile = atom_to_list(RelName),
+    ClusFile = atom_to_list(RelName) ++ ".clus",
+    [{filename:join(["bin", BinFile]), filename:join([OutputDir, "bin", BinFile])}, 
+     {filename:join(["releases", ClusFile]), filename:join([OutputDir, "releases", ClusFile])},
+     {filename:join(["releases", RelVsn, ClusFile]),  filename:join([OutputDir, "releases", RelVsn, ClusFile])}].
 
 sub_release_files(State, OutputDir) ->
     {RelName, RelVsn} = rlx_state:default_configured_release(State),

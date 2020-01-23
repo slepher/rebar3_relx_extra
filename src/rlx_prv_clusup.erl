@@ -245,10 +245,11 @@ changed(Metas, MetasFrom) ->
 make_upfrom_release_scripts(ClusterName, Releases, UpFromReleases, State) ->
     lists:foldl(
       fun({RelName, RelVsn, _RelApps}, {ok, StateAcc}) ->
-              case proplists:get_value(RelName, UpFromReleases) of
+
+              case lists:keyfind(RelName, 1, UpFromReleases) of
                   undefined ->
                       {ok, State};
-                  UpFromRelVsn ->
+                  {RelName, UpFromRelVsn, _} ->
                       case RelVsn == UpFromRelVsn of
                           true ->
                               {ok, State};
@@ -322,7 +323,7 @@ make_upfrom_script(State, Release, UpFrom) ->
     WarningsAsErrors = rlx_state:warnings_as_errors(State),
     Options = [{outdir, OutputDir},
                {path, rlx_util:get_code_paths(Release, OutputDir) ++
-                   rlx_util:get_code_paths(UpFrom, OutputDir)},
+                    rlx_util:get_code_paths(UpFrom, OutputDir)},
                silent],
                %% the following block can be uncommented
                %% when systools:make_relup/4 returns
@@ -333,6 +334,9 @@ make_upfrom_script(State, Release, UpFrom) ->
                %%     true -> [warnings_as_errors];
                %%     false -> []
               % end,
+    RelName = rlx_release:name(Release),
+    RelVsn = rlx_release:vsn(Release),
+    UpFromVsn = rlx_release:vsn(UpFrom),
     CurrentRel = strip_rel(rlx_release:relfile(Release)),
     UpFromRel = strip_rel(rlx_release:relfile(UpFrom)),
     ec_cmd_log:debug(rlx_state:log(State),
@@ -344,15 +348,16 @@ make_upfrom_script(State, Release, UpFrom) ->
                      end) of
         ok ->
             ec_cmd_log:info(rlx_state:log(State),
-                          "relup from ~s to ~s successfully created!",
-                          [UpFromRel, CurrentRel]),
+                          "relup ~p from ~s to ~s successfully created!",
+                          [RelName, UpFromVsn, RelVsn]),
             {ok, State};
         error ->
             ?RLX_ERROR({relup_generation_error, CurrentRel, UpFromRel});
         {ok, RelUp, _, []} ->
             write_relup_file(State, Release, RelUp),
             ec_cmd_log:info(rlx_state:log(State),
-                            "relup successfully created!"),
+                          "relup ~p from ~s to ~s successfully created!",
+                          [RelName, UpFromVsn, RelVsn]),
             {ok, State};
         {ok, RelUp, Module,Warnings} ->
             case WarningsAsErrors of

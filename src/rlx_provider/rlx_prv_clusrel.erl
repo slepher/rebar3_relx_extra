@@ -169,16 +169,25 @@ write_release_files(Release, ReleaseMeta, State, Variables, CodePath) ->
                     generate_start_erl_data_file(Release, SubOutputDir),
                     case write_rel_files(RelLoadFileName, ReleaseLoadMeta, SubReleaseDir, SubOutputDir, Variables, CodePath) of
                         ok ->
+                            rename_and_clean_files(SubReleaseDir, RelFilename),
                             ok;
                         {error, Reason} ->
                             {error, Reason}
                     end;
                 {error, Reason} ->
                     {error, Reason}
-            end;
+            end; 
         {error, Reason} ->
             {error, Reason}
     end.
+
+%% rename and remove files make files like archived project directory
+rename_and_clean_files(SubReleaseDir, RelFilename) ->
+    ok = ec_file:copy(filename:join(SubReleaseDir, RelFilename ++ ".boot"), filename:join(SubReleaseDir, "start.boot")),
+    lists:foreach(
+      fun(Filename) ->
+              ok = ec_file:remove(filename:join(SubReleaseDir, Filename))
+      end, ["load.rel", "load.script", RelFilename ++ ".boot", RelFilename ++ ".script"]).
 
 create_RELEASES(OutputDir, RelFilename, ReleaseVsn) ->
     ReleaseDir =  filename:join([OutputDir, "clients", RelFilename, "releases"]),

@@ -88,7 +88,10 @@ format_error({relup_script_generation_warn, Module, Warnings}) ->
      rlx_util:indent(2), Module:format_warning(Warnings)];
 format_error({relup_script_generation_error, Module, Errors}) ->
     ["Errors generating relup \n",
-     rlx_util:indent(2), Module:format_error(Errors)].
+     rlx_util:indent(2), Module:format_error(Errors)];
+format_error(Reason) ->
+    io_lib:format("~p", [Reason]).
+
 
 
 -spec add_system_lib_dir(rlx_state:t()) -> [file:name()].
@@ -165,29 +168,33 @@ make_clusup(ClusterName, ClusterVsn, Clusters, State) ->
         undefined ->
             ?RLX_ERROR({no_release_found, ClusterVsn});
         {Releases, Apps} ->
-            UpFrom = rlx_state:upfrom(State),
-            UpFrom1 =
-                case UpFrom of
-                    undefined ->
-                        get_last_release(ClusterName, ClusterVsn, Clusters);
-                    Vsn ->
-                        get_releases(ClusterName, Vsn, Clusters)
-                end,
-            case UpFrom1 of
-                undefined ->
-                    ?RLX_ERROR({no_upfrom_release_found, ClusterVsn});
-                {UpFromReleases, UpFromApps} ->
-                    make_upfrom_cluster_script(ClusterName, ClusterVsn, Releases, Apps, UpFromReleases, UpFromApps, State),
-                    make_upfrom_release_scripts(ClusterName, Releases, UpFromReleases, State)
+            case update_up_from(ClusterName, ClusterVsn, Clusters, State) of
+                {ok, {UpFrom, State1}} ->
+                    case get_releases(ClusterName, UpFrom, Clusters) of
+                        undefined ->
+                            ?RLX_ERROR({no_upfrom_release_found, ClusterVsn});
+                        {UpFromReleases, UpFromApps} ->
+                            make_upfrom_cluster_script(
+                              ClusterName, ClusterVsn, Releases, Apps, UpFromReleases, UpFromApps, State1),
+                            make_upfrom_release_scripts(ClusterName, Releases, UpFromReleases, State1)
+                    end;
+                {error, Reason} ->
+                    {error, Reason}
             end
     end.
 
-get_last_release(ClusterName, ClusterVsn, Clusters) ->
-    case get_last_release_vsn(ClusterName, ClusterVsn, Clusters) of
-        {ok, ClusterVsn1} ->
-            get_releases(ClusterName, ClusterVsn1, Clusters);
-        {error, Reason} ->
-            {error, Reason}
+update_up_from(ClusterName, ClusterVsn, Clusters, State) ->
+    case rlx_state:upfrom(State) of
+        undefined ->
+            case get_last_release_vsn(ClusterName, ClusterVsn, Clusters) of
+                {ok, UpFrom} ->
+                    State1 = rlx_state:upfrom(State, UpFrom),
+                    {ok, {UpFrom, State1}};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        UpFrom ->
+            {ok, {UpFrom, State}}
     end.
 
 get_last_release_vsn(ClusterName, ClusterVsn, Clusters) ->
@@ -356,7 +363,7 @@ make_upfrom_script(State, Release, UpFrom) ->
         {ok, RelUp, _, []} ->
             write_relup_file(State, Release, RelUp),
             ec_cmd_log:info(rlx_state:log(State),
-                          "relup ~p from ~s to ~s successfully created!",
+                          "clusup ~p from ~s to ~s successfully created!~n",
                           [RelName, UpFromVsn, RelVsn]),
             {ok, State};
         {ok, RelUp, Module,Warnings} ->

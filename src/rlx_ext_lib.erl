@@ -39,7 +39,8 @@ update_rlx(State) ->
                                       rlx_prv_app_assembler,
                                       rlx_prv_clusrel, 
                                       rlx_prv_clusup, 
-                                      rlx_prv_clustar]}|Relx1],
+                                      rlx_prv_clustar,
+                                      rlx_prv_clusuptar]}|Relx1],
             {ok, rebar_state:set(State, relx, Relx2)};
         {error, Reason} ->
             {error, Reason}

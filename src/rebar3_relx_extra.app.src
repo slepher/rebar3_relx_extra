@@ -1,6 +1,6 @@
 {application, rebar3_relx_extra,
- [{description, "A rebar plugin"},
-  {vsn, "0.4.0"},
+ [{description, "A rebar plugin for release cluster"},
+  {vsn, "0.4.1"},
   {registered, []},
   {applications,
    [kernel,

@@ -49,7 +49,7 @@ realized_release(State, DepGraph, InclApps, Name, Vsn) ->
         _ ->
             case rlx_depsolver:solve(DepGraph, Goals) of
                 {ok, Pkgs} ->
-                    rlx_release:realize(Release, Pkgs, rlx_state:available_apps(State));
+                    rlx_release:realize(Release1, Pkgs, rlx_state:available_apps(State));
                 {error, Error} ->
                     {error, {Name, failed_solve, Error}}
             end

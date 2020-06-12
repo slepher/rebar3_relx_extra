@@ -57,7 +57,7 @@ do(State) ->
 make_tar(State, Release, SubReleases, OutputDir) ->
     Name = rlx_release:name(Release),
     Vsn = rlx_release:vsn(Release),
-    TarFile = filename:join(OutputDir, atom_to_list(Name) ++ "-" ++ Vsn ++ ".tar.gz"),
+    TarFile = filename:join(OutputDir, atom_to_list(Name) ++ "_" ++ Vsn ++ ".tar.gz"),
     Files = tar_files(State, Release, SubReleases, OutputDir),
     ok = erl_tar:create(TarFile, Files, [dereference,compressed]),
     ec_cmd_log:info(rlx_state:log(State), "tarball ~s successfully created!~n", [TarFile]),

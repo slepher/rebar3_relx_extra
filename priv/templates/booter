@@ -13,15 +13,18 @@ case $OSTYPE in
     ;;
 esac
 
-while getopts :n:r:e:c: opts; do
+while getopts :s:n:r:e:c: opts; do
     case $opts in
         c) CONSOLE=$OPTARG ;;
         e) ERTS_VSN=$OPTARG ;;
         r) REL_VSN=$OPTARG ;;
         n) REL_NAME=$OPTARG ;;
+        s) START_APP=$OPTARG ;;
         ?) ;;
     esac
 done
+
+shift $((OPTIND-1))
 
 find_erts_dir() {
     __erts_dir="$RELEASE_ROOT_DIR/erts-$ERTS_VSN"
@@ -78,18 +81,33 @@ then
   [ ! -d $PIPE_DIR ] && mkdir -p $PIPE_DIR
   [ ! -d $RUNNER_LOG_DIR ] && mkdir -p $RUNNER_LOG_DIR
 
-  HEART_COMMAND="$SCRIPT_DIR/$SCRIPT_NAME -n $REL_NAME"
+  HEART_COMMAND="$SCRIPT_DIR/$SCRIPT_NAME -n $REL_NAME -s true"
   echo $HEART_COMMAND
   export HEART_COMMAND
+  if [ -z $START_APP ]
+  then
   echo "$BINDIR/run_erl" -daemon "$PIPE_DIR" "$RUNNER_LOG_DIR" \
-      "exec $SCRIPT -n $REL_NAME -e $ERTS_VSN -r $REL_VSN -c true"
+       "exec $SCRIPT -n $REL_NAME -e $ERTS_VSN -r $REL_VSN -c true"
   "$BINDIR/run_erl" -daemon "$PIPE_DIR" "$RUNNER_LOG_DIR" \
-    "exec $SCRIPT -n $REL_NAME -e $ERTS_VSN -r $REL_VSN -c true"
+       "exec $SCRIPT -n $REL_NAME -e $ERTS_VSN -r $REL_VSN -c true"
+  else
+  echo "$BINDIR/run_erl" -daemon "$PIPE_DIR" "$RUNNER_LOG_DIR" \
+       "exec $SCRIPT -n $REL_NAME -e $ERTS_VSN -r $REL_VSN -c true -s true"
+  "$BINDIR/run_erl" -daemon "$PIPE_DIR" "$RUNNER_LOG_DIR" \
+       "exec $SCRIPT -n $REL_NAME -e $ERTS_VSN -r $REL_VSN -c true -s true"
+  fi
 else
   export ROOTDIR="$RELEASE_ROOT_DIR"  
   CODE_LOADING_MODE="${CODE_LOADING_MODE:-embedded}"
+  RELDIR="$RELEASE_ROOT_DIR/clients/$REL_NAME/releases"
+  export RELDIR
   REL_DIR="$RELEASE_ROOT_DIR/clients/$REL_NAME/releases/$REL_VSN"
-  BOOTFILE="$REL_DIR/load"
+  if [ -z $START_APP ]
+  then
+      BOOTFILE="$REL_DIR/load"
+  else
+      BOOTFILE="$REL_DIR/start"
+  fi
   VMARGS_PATH=$(add_path vm.args $VMARGS_PATH)
   RELX_CONFIG_PATH=$(add_path sys.config $RELX_CONFIG_PATH)
   ERTS_LIB_DIR="$(dirname "$ERTS_DIR")/lib"
@@ -97,13 +115,13 @@ else
   echo $BINDIR
   echo $RELEASE_ROOT_DIR
   cd "$RELEASE_ROOT_DIR/clients/$REL_NAME"
-  
+
   echo "$BINDIR/erlexec" \
        -boot "$BOOTFILE" -mode "$CODE_LOADING_MODE" \
        -boot_var ERTS_LIB_DIR "$ERTS_LIB_DIR" \
        -config "$RELX_CONFIG_PATH" \
        -args_file "$VMARGS_PATH" \
-       -pa ${__code_paths}
+       -pa ${__code_paths} -- "$@"
 
   exec "$BINDIR/erlexec" \
        -boot "$BOOTFILE" -mode "$CODE_LOADING_MODE" \

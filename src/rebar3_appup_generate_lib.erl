@@ -192,7 +192,7 @@ get_clus_apps(Name, Version, Path) ->
     case filelib:is_file(Filename) of
         true ->
             case file:consult(Filename) of
-                {ok, [{cluster, _Name, _Version, Release, Apps}]} ->
+                {ok, [{cluster, _Name, _Version, _Release, Apps}]} ->
                     Apps;
                 _ ->
                     rebar3_api:abort("Failed to parse ~s~n", [Filename])

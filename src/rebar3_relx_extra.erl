@@ -24,7 +24,8 @@ init(State) ->
     {ok, State4} = rebar3_prv_clustar:init(State3),
     {ok, State5} = rebar3_prv_clusuptar:init(State4),
     {ok, State6} = rebar3_prv_tar_ext:init(State5),
-    {ok, State6}.
+    {ok, State7} = rebar3_prv_gen_appup:init(State6),
+    {ok, State7}.
 
 %%--------------------------------------------------------------------
 %% @doc

@@ -47,9 +47,21 @@ realized_release(State, DepGraph, InclApps, Name, Vsn) ->
         [] ->
             {error, {Name, no_goals_specified}};
         _ ->
-            case rlx_depsolver:solve(DepGraph, Goals) of
+            Goals1 = 
+                lists:map(
+                  fun({App, load}) ->
+                          App;
+                     (App) ->
+                          App
+                  end, Goals),
+            case rlx_depsolver:solve(DepGraph, Goals1) of
                 {ok, Pkgs} ->
-                    rlx_release:realize(Release1, Pkgs, rlx_state:available_apps(State));
+                    case rlx_release:realize(Release1, Pkgs, rlx_state:available_apps(State)) of
+                        {ok, Specs} ->
+                            {ok, Specs};
+                        {error, Error} ->
+                            {error, {Name, failed_realize, Error}}
+                    end;
                 {error, Error} ->
                     {error, {Name, failed_solve, Error}}
             end

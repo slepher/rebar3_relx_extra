@@ -13,6 +13,7 @@
 -export([sub_release_state/4]).
 -export([rlx_releases/1]).
 -export([update_rlx/1]).
+-export([rlx_state/1]).
 
 %%%===================================================================
 %%% API

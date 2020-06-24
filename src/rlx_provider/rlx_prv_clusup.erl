@@ -346,9 +346,7 @@ make_upfrom_script(State, Release, UpFrom) ->
     UpFromVsn = rlx_release:vsn(UpFrom),
     CurrentRel = strip_rel(rlx_release:relfile(Release)),
     UpFromRel = strip_rel(rlx_release:relfile(UpFrom)),
-    ec_cmd_log:debug(rlx_state:log(State),
-                  "systools:make_relup(~p, ~p, ~p, ~p)",
-                  [CurrentRel, UpFromRel, UpFromRel, Options]),
+    ec_cmd_log:debug(rlx_state:log(State), "systools:make_relup(~p, ~p, ~p, ~p)", [CurrentRel, UpFromRel, UpFromRel, Options]),
     case rlx_util:make_script(Options,
                      fun(CorrectOptions) ->
                              systools:make_relup(CurrentRel, [UpFromRel], [UpFromRel], CorrectOptions)

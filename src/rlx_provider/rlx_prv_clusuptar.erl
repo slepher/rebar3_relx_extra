@@ -52,9 +52,15 @@ do(State) ->
     FromVsn = rlx_state:upfrom(State),
     case diff_applications(OutputDir, Clusname, ClusVsn, FromVsn) of
         {ok, DiffApplications} ->
-            ApplicationFiles = application_files(DiffApplications, OutputDir, State),
-            make_tar(OutputDir, Clusname, ClusVsn, FromVsn, ApplicationFiles, State),
-            {ok, State};
+            case diff_releases(OutputDir, Clusname, ClusVsn, FromVsn) of
+                {ok, Releases} ->
+                    ApplicationFiles = application_files(DiffApplications, OutputDir, State),
+                    ReleaseFiles = client_files(Releases, OutputDir, State),
+                    make_tar(OutputDir, Clusname, ClusVsn, FromVsn, ReleaseFiles ++ ApplicationFiles, State),
+                    {ok, State};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
         {error, Reason} ->
             {error, Reason}
     end.
@@ -75,6 +81,21 @@ diff_applications(OutputDir, Clusname, ClusVsn, FromVsn) ->
             {error, Reason}
     end.
 
+diff_releases(OutputDir, Clusname, ClusVsn, FromVsn) ->
+    ClusFilename = atom_to_list(Clusname),
+    Relfile = filename:join([OutputDir, "releases", ClusVsn, ClusFilename ++ ".clus"]),
+    FromRelfile = filename:join([OutputDir, "releases", FromVsn, ClusFilename ++ ".clus"]),
+    case get_releases(Relfile) of
+        {ok, RelApps} ->
+            case get_releases(FromRelfile) of
+                {ok, FromApps} ->
+                    {ok, RelApps -- FromApps};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
 application_files(Applications, OutputDir, State) ->
     Paths = paths(State, OutputDir),
     lists:foldl(
@@ -85,11 +106,29 @@ application_files(Applications, OutputDir, State) ->
                   ApplicationFiles ++ Acc
           end, [], Applications).
 
+client_files(Clients, OutputDir, _State) ->
+    lists:foldl(
+      fun({ReleaseName, ReleaseVsn, _}, Acc) ->
+              Target = filename:join(["clients", ReleaseName, "releases", ReleaseVsn]),
+              File = filename:join(OutputDir, Target),
+              [{Target, File}|Acc]
+          end, [], Clients).
+
 make_tar(OutputDir, Name, Vsn, FromVsn, Files, State) ->
     TarFile = filename:join(OutputDir, atom_to_list(Name) ++ "_" ++ FromVsn ++ "-" ++ Vsn ++ ".tar.gz"),
     ok = erl_tar:create(TarFile, Files, [dereference,compressed]),
     ec_cmd_log:info(rlx_state:log(State), "tarball ~s successfully created!~n", [TarFile]),
     {ok, State}.
+
+get_releases(Relfile) ->
+    case file:consult(Relfile) of
+        {ok, [{cluster, _Clusname, _ClusVsn, Releases, _Apps}]} when is_list(Releases) ->
+            {ok, Releases};
+        {ok, _} ->
+            {error, {invalid_file_content, Relfile}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 get_apps(Relfile) ->
     case file:consult(Relfile) of

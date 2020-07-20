@@ -91,23 +91,36 @@ generate_appups(CurrentRelPath, PreviousRelPath,  TargetDir, _CurrentVer, Opts, 
                   end, AddApps ++ UpgradeApps),
     ok.
 
+app_ebin(App, State) ->
+    CurrentBaseDir = rebar_dir:base_dir(State),
+    %% check for the app either in deps or lib
+    CheckoutsEbinDir = filename:join([rebar_dir:checkouts_dir(State),
+                                      atom_to_list(App), "ebin"]),
+    DepsEbinDir = filename:join([CurrentBaseDir, "deps",
+                                 atom_to_list(App), "ebin"]),
+    LibEbinDir = filename:join([CurrentBaseDir, "lib",
+                                atom_to_list(App), "ebin"]),
+    case {filelib:is_dir(DepsEbinDir),
+          filelib:is_dir(LibEbinDir),
+          filelib:is_dir(CheckoutsEbinDir)} of
+        {true, _, _} -> DepsEbinDir;
+        {_, true, _} -> LibEbinDir;
+        {_, _, true} -> CheckoutsEbinDir;
+        {_, _, _} -> undefined
+    end.
+
 gen_appup_which_apps(Apps, State) ->
     gen_appup_which_apps(Apps, State, []).
 
 gen_appup_which_apps([App|T], State, Acc) ->
-    AppName = rebar_app_info:name(App),
-    AppVsn = rebar_app_info:vsn(App),
-    AppEbinDir = rebar_app_info:ebin_dir(App),
-    Appup = filename:join([AppEbinDir, AppName ++ ".appup"]),
+    AppName = element(2, App),
+    AppEbinDir = app_ebin(AppName, State),
+    Appup = filename:join([AppEbinDir, atom_to_list(AppName) ++ ".appup"]),
     case filelib:is_file(Appup) of
         true ->
-            {_, AppupVsn} = appup_info(Appup),
-            case AppVsn == AppupVsn of
-                true ->
-                    gen_appup_which_apps(T, State, Acc);
-                false ->
-                    gen_appup_which_apps(T, State, [App|Acc])
-            end;
+            {_, Vsn} = appup_info(Appup),
+            rebar_api:info("appup ~p for ~p ~s exists", [Vsn, AppName, Appup]),
+            gen_appup_which_apps(T, State, Acc);
         false ->
             gen_appup_which_apps(T, State, [App|Acc])
     end;
@@ -331,26 +344,7 @@ module_dependencies([Mod | Rest], Mods, Acc) ->
 %% @spec write_appup(atom(),_,_,atom() | binary() | [atom() | [any()] | char()],[any()],[{'add_module',_} | {'apply',{_,_,_}} | {'delete_module',_} | {'remove_application',_} | {'add_application',_,'permanent'} | {'update',_,'supervisor'} | {'load_module',_,_,_,_} | {'update',_,{_,_},_,_,_}],[{'plugin_dir',_} | {'purge_opts',[any()]},...],_) -> 'ok'.
 write_appup(App, OldVer, NewVer, NewRelEbinDir, TargetDir,
             UpgradeInstructions0, DowngradeInstructions0,
-            Opts, State) ->
-    CurrentBaseDir = rebar_dir:base_dir(State),
-    %% check for the app either in deps or lib
-    rebar_api:info("current base dir: ~p", [CurrentBaseDir]),
-    CheckoutsEbinDir = filename:join([rebar_dir:checkouts_dir(State),
-                                      atom_to_list(App), "ebin"]),
-    DepsEbinDir = filename:join([CurrentBaseDir, "deps",
-                                atom_to_list(App), "ebin"]),
-    LibEbinDir = filename:join([CurrentBaseDir, "lib",
-                                atom_to_list(App), "ebin"]),
-    AppEbinDir = case {filelib:is_dir(DepsEbinDir),
-                       filelib:is_dir(LibEbinDir),
-                       filelib:is_dir(CheckoutsEbinDir)} of
-                    {true, _, _} -> DepsEbinDir;
-                    {_, true, _} -> LibEbinDir;
-                    {_, _, true} -> CheckoutsEbinDir;
-                    {_, _, _} -> undefined
-                 end,
-    rebar_api:info("app ~p ebin dir: ~p",
-        [App, AppEbinDir]),
+            Opts, _State) ->
     AppUpFiles = case TargetDir of
                     undefined ->
                          EbinAppup = filename:join([NewRelEbinDir,

@@ -27,7 +27,7 @@ init(State) ->
             {opts, [                       % list of options understood by the plugin
                 {relname, $n, "relname", string, "Release name"},
                 {previous, $b, "previous", string, "location of the previous release"},
-                {previous_version, $p, "previous_version", string, "version of the previous release"},
+                {previous_version, $u, "upfrom", string, "version of the previous release"},
                 {current, $c, "current", string, "location of the current release"},
                 {target_dir, $t, "target_dir", string, "target dir in which to generate the .appups to"},
                 {purge, $g, "purge", string, "per-module semi-colon separated list purge type "
@@ -62,7 +62,7 @@ do(State) ->
     {PreviousName, _PreviousVer0} = get_clus_release_info(Name, PreviousRelPath),
 
     %% if a specific one was requested use that instead
-    PreviousVer = case proplists:get_value(previous_version, Opts, undefined) of
+    PreviousVer = case proplists:get_value(upfrom, Opts, undefined) of
                       undefined ->
                           rebar3_appup_generate_lib:deduce_previous_version(
                             Name, CurrentVer,CurrentRelPath, PreviousRelPath);

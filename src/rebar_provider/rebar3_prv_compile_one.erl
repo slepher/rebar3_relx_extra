@@ -74,7 +74,12 @@ format_error(Reason) ->
 
 run_compilers(Compilers, AppInfo, Module) ->
     lists:foreach(fun(CompilerMod) ->
-                          run(CompilerMod, AppInfo, Module, undefined)
+                          AppInfoExts = annotate_extras(AppInfo),
+                          run(CompilerMod, AppInfo, Module, undefined),
+                          lists:foreach(
+                            fun(AppInfo1) ->
+                                    run(CompilerMod, AppInfo1, Module, undefined)
+                            end, AppInfoExts)
                   end, Compilers).
 
 compiled_app(undefined, _Deps, [App]) ->
@@ -98,7 +103,6 @@ run(CompilerMod, AppInfo, Module, Label) ->
       include_dirs := InclDirs,
       src_ext := SrcExt,
       out_mappings := Mappings} = CompilerMod:context(AppInfo),
-
     BaseDir = rebar_utils:to_list(rebar_app_info:dir(AppInfo)),
     EbinDir = rebar_utils:to_list(rebar_app_info:ebin_dir(AppInfo)),
 
@@ -143,3 +147,47 @@ compile_each([Source | Rest], Opts, Config, Outs, CompilerMod) ->
             rebar_api:abort()
     end,
     compile_each(Rest, Opts, Config, Outs, CompilerMod).
+
+annotate_extras(AppInfo) ->
+    AppOpts = rebar_app_info:opts(AppInfo),
+    ExtraDirs = rebar_dir:extra_src_dirs(AppOpts, []),
+    OldSrcDirs = rebar_dir:src_dirs(AppOpts, ["src"]),
+    %% Re-annotate the directories with non-default options if it is the
+    %% case; otherwise, later down the line, the options get dropped with
+    %% profiles. All of this must be done with the rebar_dir functionality
+    %% which properly tracks and handles the various legacy formats for
+    %% recursion setting (erl_opts vs. dir options and profiles)
+    ExtraDirsOpts = [case rebar_dir:recursive(AppOpts, Dir) of
+                         false -> {Dir, [{recursive, false}]};
+                         true -> Dir
+                     end || Dir <- ExtraDirs],
+    OldSrcDirsOpts = [case rebar_dir:recursive(AppOpts, Dir) of
+                          false -> {Dir, [{recursive, false}]};
+                          true -> Dir
+                      end || Dir <- OldSrcDirs],
+    AppDir = rebar_app_info:dir(AppInfo),
+    lists:map(fun({DirOpt, Dir}) ->
+        EbinDir = filename:join(rebar_app_info:out_dir(AppInfo), Dir),
+        %% need a unique name to prevent lookup issues that clobber entries
+        AppName = unicode:characters_to_binary(
+            [rebar_app_info:name(AppInfo), "_", Dir]
+        ),
+        AppInfo0 = rebar_app_info:name(AppInfo, AppName),
+        AppInfo1 = rebar_app_info:ebin_dir(AppInfo0, EbinDir),
+        AppInfo2 = rebar_app_info:set(AppInfo1, src_dirs, [DirOpt]),
+        AppInfo3 = rebar_app_info:set(AppInfo2, extra_src_dirs, OldSrcDirsOpts),
+        add_to_includes( % give access to .hrl in app's src/
+            AppInfo3,
+            [filename:join([AppDir, D]) || D <- OldSrcDirs]
+        )
+    end,
+    [T || T = {_DirOpt, ExtraDir} <- lists:zip(ExtraDirsOpts, ExtraDirs),
+          filelib:is_dir(filename:join(AppDir, ExtraDir))]
+    ).
+
+add_to_includes(AppInfo, Dirs) ->
+    Opts = rebar_app_info:opts(AppInfo),
+    List = rebar_opts:get(Opts, erl_opts, []),
+    NewErlOpts = [{i, Dir} || Dir <- Dirs] ++ List,
+    NewOpts = rebar_opts:set(Opts, erl_opts, NewErlOpts),
+    rebar_app_info:opts(AppInfo, NewOpts).

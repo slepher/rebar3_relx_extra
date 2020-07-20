@@ -54,7 +54,7 @@
 %% ===================================================================
 %% Public API
 %% ===================================================================
-generate_appups(CurrentRelPath, PreviousRelPath,  TargetDir, CurrentVer, Opts, AddApps0, UpgradeApps0, RemoveApps, State) ->
+generate_appups(CurrentRelPath, PreviousRelPath,  TargetDir, _CurrentVer, Opts, AddApps0, UpgradeApps0, RemoveApps, State) ->
     %% search for this plugin's appinfo in order to know
     %% where to look for the mustache templates
     Apps = rebar_state:all_plugin_deps(State),
@@ -62,24 +62,16 @@ generate_appups(CurrentRelPath, PreviousRelPath,  TargetDir, CurrentVer, Opts, A
     PluginDir = rebar_app_info:dir(PluginInfo),
     %% Get a list of any appup files that exist in the current release
     CurrentAppUpFiles = rebar3_appup_utils:find_files_by_ext(
-                          filename:join([CurrentRelPath, "lib"]),
-                          ".appup"),
-    %% Get a list of any appup files that exist in the current release
-    CurrentAppUpFiles = rebar3_appup_utils:find_files_by_ext(
-                            filename:join([CurrentRelPath, "lib"]),
-                            ".appup"),    
-    %% Get a list of any appup files that exist in the current release
-    CurrentAppUpFiles = rebar3_appup_utils:find_files_by_ext(
                             filename:join([CurrentRelPath, "lib"]),
                             ".appup"),
     %% Convert the list of appup files into app names
     CurrentAppUpApps = lists:usort([appup_info(File) || File <- CurrentAppUpFiles]),
-    rebar_api:debug("apps that already have .appups: ~p",
-        [CurrentAppUpApps]),
+    rebar_api:debug("apps that already have .appups: ~p", [CurrentAppUpApps]),
 
     %% Create a list of apps that don't already have appups
-    UpgradeApps = gen_appup_which_apps(UpgradeApps0 ++ AddApps0, CurrentVer, CurrentAppUpApps),
-    AddApps = gen_appup_which_apps(AddApps0, CurrentVer, CurrentAppUpApps),
+    UpgradeApps1 = gen_appup_which_apps(UpgradeApps0, State),
+    AddApps = gen_appup_which_apps(AddApps0, State),
+    UpgradeApps = UpgradeApps1 ++ AddApps,
     rebar_api:debug("generating .appup for apps: ~p",
         [AddApps ++ UpgradeApps ++ RemoveApps]),
 
@@ -99,6 +91,28 @@ generate_appups(CurrentRelPath, PreviousRelPath,  TargetDir, CurrentVer, Opts, A
                   end, AddApps ++ UpgradeApps),
     ok.
 
+gen_appup_which_apps(Apps, State) ->
+    gen_appup_which_apps(Apps, State, []).
+
+gen_appup_which_apps([App|T], State, Acc) ->
+    AppName = rebar_app_info:name(App),
+    AppVsn = rebar_app_info:vsn(App),
+    AppEbinDir = rebar_app_info:ebin_dir(App),
+    Appup = filename:join([AppEbinDir, AppName ++ ".appup"]),
+    case filelib:is_file(Appup) of
+        true ->
+            {_, AppupVsn} = appup_info(Appup),
+            case AppVsn == AppupVsn of
+                true ->
+                    gen_appup_which_apps(T, State, Acc);
+                false ->
+                    gen_appup_which_apps(T, State, [App|Acc])
+            end;
+        false ->
+            gen_appup_which_apps(T, State, [App|Acc])
+    end;
+gen_appup_which_apps([], _State, Acc) ->
+    lists:reverse(Acc).
 
 parse_purge_opts(Opts0) when is_list(Opts0) ->
     Opts1 = re:split(Opts0, ";"),
@@ -195,7 +209,7 @@ get_clus_apps(Name, Version, Path) ->
                 {ok, [{cluster, _Name, _Version, _Release, Apps}]} ->
                     Apps;
                 _ ->
-                    rebar3_api:abort("Failed to parse ~s~n", [Filename])
+                    rebar_api:abort("Failed to parse ~s~n", [Filename])
             end;
         false ->
             rebar_api:abort("file ~s not exists ~n", [Filename])
@@ -217,28 +231,19 @@ appup_info(File) ->
     {ok, [{ToVersion, _, _}]} = file:consult(File),
     {file_to_name(File), ToVersion}.
 
-%% @spec gen_appup_which_apps([any()],[string()]) -> [any()].
-gen_appup_which_apps(UpgradedApps0, CurrentVersion, [{App, Version} | Rest]) ->
-    UpgradedApps = case CurrentVersion =:= Version of
-                        true ->
-                            lists:keydelete(list_to_atom(App), 2, UpgradedApps0);
-                        false -> UpgradedApps0
-                   end,
-    gen_appup_which_apps(UpgradedApps, CurrentVersion, Rest);
-gen_appup_which_apps(Apps, _CurrentVersion, []) ->
-    Apps.
-
 %% @spec generate_appup_files(_,atom() | binary() | [atom() | [any()] | char()],atom() | binary() | [atom() | [any()] | char()],{'upgrade',_,{'undefined' | [any()],_}},[{'plugin_dir',_} | {'purge_opts',[any()]},...],_) -> 'ok'.
 generate_appup_files(_, _, _, {upgrade, _App, {undefined, _}}, _, _) -> ok;
 generate_appup_files(TargetDir,
-                     _NewVerPath, _OldVerPath,
+                     NewVerPath, _OldVerPath,
                      {add, App, Version},
                      Opts, State) ->
 
     UpgradeInstructions = [{add_application, App, permanent}],
     DowngradeInstructions = lists:reverse(lists:map(fun invert_instruction/1,
                                                     UpgradeInstructions)),
-    ok = write_appup(App, ".*", Version, TargetDir,
+    NewRelEbinDir = filename:join([NewVerPath, "lib",
+                                atom_to_list(App) ++ "-" ++ Version, "ebin"]),
+    ok = write_appup(App, ".*", Version, NewRelEbinDir, TargetDir,
                      UpgradeInstructions, DowngradeInstructions,
                      Opts, State),
     ok;
@@ -285,7 +290,7 @@ generate_appup_files(TargetDir,
     DowngradeInstructions = lists:flatten(DowngradeInstructions0),
     rebar_api:debug("downgrade instructions: ~p", [DowngradeInstructions]),
 
-    ok = write_appup(App, OldVer, NewVer, TargetDir,
+    ok = write_appup(App, OldVer, NewVer, NewRelEbinDir, TargetDir,
                      UpgradeInstructions, DowngradeInstructions,
                      Opts, State),
     ok.
@@ -324,7 +329,7 @@ module_dependencies([Mod | Rest], Mods, Acc) ->
     module_dependencies(Rest, Mods, Acc ++ [{Mod, Deps}]).
 
 %% @spec write_appup(atom(),_,_,atom() | binary() | [atom() | [any()] | char()],[any()],[{'add_module',_} | {'apply',{_,_,_}} | {'delete_module',_} | {'remove_application',_} | {'add_application',_,'permanent'} | {'update',_,'supervisor'} | {'load_module',_,_,_,_} | {'update',_,{_,_},_,_,_}],[{'plugin_dir',_} | {'purge_opts',[any()]},...],_) -> 'ok'.
-write_appup(App, OldVer, NewVer, TargetDir,
+write_appup(App, OldVer, NewVer, NewRelEbinDir, TargetDir,
             UpgradeInstructions0, DowngradeInstructions0,
             Opts, State) ->
     CurrentBaseDir = rebar_dir:base_dir(State),
@@ -348,18 +353,9 @@ write_appup(App, OldVer, NewVer, TargetDir,
         [App, AppEbinDir]),
     AppUpFiles = case TargetDir of
                     undefined ->
-                        case AppEbinDir of
-                            undefined ->
-                                %% if we couldn't find any app ebin dir
-                                %% then don't bother generating any app
-                                rebar_api:warn("unable to generate appup for non-existing application ~p",
-                                             [App]),
-                                [];
-                            _ ->
-                                EbinAppup = filename:join([AppEbinDir,
-                                                           atom_to_list(App) ++ ".appup"]),
-                                [EbinAppup]
-                        end;
+                         EbinAppup = filename:join([NewRelEbinDir,
+                                                    atom_to_list(App) ++ ".appup"]),
+                         [EbinAppup];
                     _ ->
                         [filename:join([TargetDir, atom_to_list(App) ++ ".appup"])]
                  end,

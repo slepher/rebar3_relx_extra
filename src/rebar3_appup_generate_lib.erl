@@ -27,7 +27,7 @@
 
 %% exported for eunit
 -export([matching_versions/2,
-         merge_instructions/6]).
+         merge_instructions/7]).
 -export([get_current_rel_path/2]).
 -export([deduce_previous_version/4]).
 -export([get_apps/6]).
@@ -92,20 +92,23 @@ generate_appups(CurrentRelPath, PreviousRelPath,  TargetDir, _CurrentVer, Opts, 
     ok.
 
 app_ebin(App, State) ->
+    app_dir(App, State, "ebin").
+
+app_dir(App, State, Dir) ->
     CurrentBaseDir = rebar_dir:base_dir(State),
     %% check for the app either in deps or lib
-    CheckoutsEbinDir = filename:join([rebar_dir:checkouts_dir(State),
-                                      atom_to_list(App), "ebin"]),
-    DepsEbinDir = filename:join([CurrentBaseDir, "deps",
-                                 atom_to_list(App), "ebin"]),
-    LibEbinDir = filename:join([CurrentBaseDir, "lib",
-                                atom_to_list(App), "ebin"]),
-    case {filelib:is_dir(DepsEbinDir),
-          filelib:is_dir(LibEbinDir),
-          filelib:is_dir(CheckoutsEbinDir)} of
-        {true, _, _} -> DepsEbinDir;
-        {_, true, _} -> LibEbinDir;
-        {_, _, true} -> CheckoutsEbinDir;
+    CheckoutsDir = filename:join([rebar_dir:checkouts_dir(State),
+                                      atom_to_list(App), Dir]),
+    DepsDir = filename:join([CurrentBaseDir, "deps",
+                                 atom_to_list(App), Dir]),
+    LibDir = filename:join([CurrentBaseDir, "lib",
+                                atom_to_list(App), Dir]),
+    case {filelib:is_dir(DepsDir),
+          filelib:is_dir(LibDir),
+          filelib:is_dir(CheckoutsDir)} of
+        {true, _, _} -> DepsDir;
+        {_, true, _} -> LibDir;
+        {_, _, true} -> CheckoutsDir;
         {_, _, _} -> undefined
     end.
 
@@ -344,7 +347,7 @@ module_dependencies([Mod | Rest], Mods, Acc) ->
 %% @spec write_appup(atom(),_,_,atom() | binary() | [atom() | [any()] | char()],[any()],[{'add_module',_} | {'apply',{_,_,_}} | {'delete_module',_} | {'remove_application',_} | {'add_application',_,'permanent'} | {'update',_,'supervisor'} | {'load_module',_,_,_,_} | {'update',_,{_,_},_,_,_}],[{'plugin_dir',_} | {'purge_opts',[any()]},...],_) -> 'ok'.
 write_appup(App, OldVer, NewVer, NewRelEbinDir, TargetDir,
             UpgradeInstructions0, DowngradeInstructions0,
-            Opts, _State) ->
+            Opts, State) ->
     AppUpFiles = case TargetDir of
                     undefined ->
                          EbinAppup = filename:join([NewRelEbinDir,
@@ -363,7 +366,7 @@ write_appup(App, OldVer, NewVer, NewRelEbinDir, TargetDir,
         ".appup.post.src files: ~p",
         [DowngradeInstructions0]),
     {UpgradeInstructions, DowngradeInstructions} =
-        merge_instructions(AppUpFiles, UpgradeInstructions0, DowngradeInstructions0, OldVer, NewVer),
+        merge_instructions(App, AppUpFiles, UpgradeInstructions0, DowngradeInstructions0, OldVer, NewVer, State),
     rebar_api:debug(
         "Upgrade instructions after merging with .appup.pre.src and "
         ".appup.post.src files:\n~p\n",
@@ -755,23 +758,23 @@ get_current_rel_path(State, Name) ->
 %% }.
 %%
 %%------------------------------------------------------------------------------
--spec merge_instructions(AppupFiles, UpgradeInstructions, DowngradeInstructions,
-                         OldVer, NewVer) -> Res when
+-spec merge_instructions(string(), AppupFiles, UpgradeInstructions, DowngradeInstructions,
+                         OldVer, NewVer, State) -> Res when
       AppupFiles :: [] | [string()],
       UpgradeInstructions :: list(tuple()),
       DowngradeInstructions :: list(tuple()),
       OldVer :: string(),
       NewVer :: string(),
+      State :: rebar_state:t(),
       Res :: {list(tuple()), list(tuple())}.
-merge_instructions([] = _AppupFiles, UpgradeInstructions, DowngradeInstructions,
-                   _OldVer, _NewVer) ->
+merge_instructions(_App, [] = _AppupFiles, UpgradeInstructions, DowngradeInstructions,
+                   _OldVer, _NewVer, _State) ->
     {UpgradeInstructions, DowngradeInstructions};
-merge_instructions([AppUpFile], UpgradeInstructions, DowngradeInstructions,
-                   OldVer, NewVer) ->
-    [_, _ | AppRootDir0] = lists:reverse(string_compat:tokens(AppUpFile, "/")),
-    AppRootDir = filename:join(["/" | lists:reverse(AppRootDir0)]),
-    AppupPrePath = find_file_by_ext(AppRootDir, ".appup.pre.src"),
-    AppupPostPath = find_file_by_ext(AppRootDir, ".appup.post.src"),
+merge_instructions(App, [_AppUpFile], UpgradeInstructions, DowngradeInstructions,
+                   OldVer, NewVer, State) ->
+    AppSrcPath = app_dir(App, State, "src"),
+    AppupPrePath = find_file_by_ext(AppSrcPath, ".appup.pre.src"),
+    AppupPostPath = find_file_by_ext(AppSrcPath, ".appup.post.src"),
     rebar_api:debug(".appup.pre.src path: ~p",
                     [AppupPrePath]),
     rebar_api:debug("appup.post.src path: ~p",
@@ -782,10 +785,10 @@ merge_instructions([AppUpFile], UpgradeInstructions, DowngradeInstructions,
                     [PreContents]),
     rebar_api:debug(".appup.post.src contents: ~p",
                     [PostContents]),
-    merge_instructions(PreContents, PostContents, OldVer, NewVer,
+    merge_instructions_0(PreContents, PostContents, OldVer, NewVer,
                         UpgradeInstructions, DowngradeInstructions).
 
--spec merge_instructions(PreContents, PostContents, OldVer, NewVer,
+-spec merge_instructions_0(PreContents, PostContents, OldVer, NewVer,
                           UpgradeInstructions, DowngradeInstructions) -> Res when
       PreContents :: undefined | {string(), list(), list()},
       PostContents :: undefined | {string(), list(), list()},
@@ -794,7 +797,7 @@ merge_instructions([AppUpFile], UpgradeInstructions, DowngradeInstructions,
       UpgradeInstructions :: list(tuple()),
       DowngradeInstructions :: list(tuple()),
       Res :: {list(tuple()), list(tuple())}.
-merge_instructions(PreContents, PostContents, OldVer, NewVer,
+merge_instructions_0(PreContents, PostContents, OldVer, NewVer,
                     UpgradeInstructions, DowngradeInstructions) ->
     {merge_pre_post_instructions(PreContents, PostContents, upgrade, OldVer,
                                  NewVer, UpgradeInstructions),

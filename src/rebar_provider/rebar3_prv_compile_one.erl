@@ -107,6 +107,7 @@ run(CompilerMod, AppInfo, Module, Label) ->
       include_dirs := InclDirs,
       src_ext := SrcExt,
       out_mappings := Mappings} = CompilerMod:context(AppInfo),
+    Modules = string:split(Module, ","),
     BaseDir = rebar_utils:to_list(rebar_app_info:dir(AppInfo)),
     EbinDir = rebar_utils:to_list(rebar_app_info:ebin_dir(AppInfo)),
 
@@ -123,7 +124,7 @@ run(CompilerMod, AppInfo, Module, Label) ->
                   Basename = filename:basename(Filename),
                   Rootname = filename:rootname(Basename),
                   Extname = filename:extension(Basename),
-                  (Rootname == Module) and (Extname == SrcExt) 
+                  lists:member(Rootname, Modules) and (Extname == SrcExt) 
           end, FoundFiles),
     G = rebar_compiler_dag_lib:init_dag(CompilerMod, AbsInclDirs, AbsSrcDirs, ModuleReleatedFiles, OutDir, EbinDir, Label),
     {{_FirstFiles, _FirstFileOpts}, {_RestFiles, Opts}} = CompilerMod:needed_files(G, ModuleReleatedFiles, Mappings, AppInfo),

@@ -24,7 +24,7 @@
 
 -spec init(rebar_state:t()) -> {ok, rebar_state:t()}.
 init(State) ->
-    Opts = [{application, $p, "app", string, "compile application"},
+    Opts = [{application, $a, "app", string, "compile application"},
             {module,      $m, "module", string, "compile module"}],
     State1 = rebar_state:add_provider(
                State, providers:create([{name, ?PROVIDER},

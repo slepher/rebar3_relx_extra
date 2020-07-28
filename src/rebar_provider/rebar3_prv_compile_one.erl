@@ -48,6 +48,10 @@ do(State) ->
     Deps = rebar_state:deps_to_build(State),
 
     ProjectApps = rebar_state:project_apps(State),
+    
+    %% add project apps to paths
+    {ok, ProjectApps1} = rebar_digraph:compile_order(ProjectApps),
+    code:add_pathsa([rebar_app_info:ebin_dir(AppInfo) || AppInfo <- ProjectApps1]),
 
     CompileApp = compiled_app(Application, Deps, ProjectApps),
     case Module of

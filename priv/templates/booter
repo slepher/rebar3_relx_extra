@@ -1,6 +1,8 @@
 #!/bin/sh
 
 set -e
+# Disable Software flow control(Ctrl+S/Ctrl+Q)
+stty stop ""
 
 # OSX does not support readlink '-f' flag, work
 # around that

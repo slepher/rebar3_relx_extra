@@ -111,9 +111,7 @@ client_files(Clients, OutputDir, _State) ->
       fun({ReleaseName, ReleaseVsn, _}, Acc) ->
               Target = filename:join(["clients", ReleaseName, "releases", ReleaseVsn]),
               File = filename:join(OutputDir, Target),
-              StartErlTarget = filename:join(["clients", ReleaseName, "releases", "start_erl.data"]),
-              StartErlFile = filename:join(OutputDir, StartErlTarget),
-              [{StartErlTarget, StartErlFile}, {Target, File}|Acc]
+              [{Target, File}|Acc]
           end, [], Clients).
 
 make_tar(OutputDir, Name, Vsn, FromVsn, Files, State) ->

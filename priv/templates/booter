@@ -1,8 +1,6 @@
 #!/bin/sh
 
 set -e
-# Disable Software flow control(Ctrl+S/Ctrl+Q)
-stty stop ""
 
 # OSX does not support readlink '-f' flag, work
 # around that
@@ -99,6 +97,8 @@ then
        "exec $SCRIPT -n $REL_NAME -e $ERTS_VSN -r $REL_VSN -c true -s true"
   fi
 else
+  # Disable Software flow control(Ctrl+S/Ctrl+Q)
+  stty stop ""
   export ROOTDIR="$RELEASE_ROOT_DIR"  
   CODE_LOADING_MODE="${CODE_LOADING_MODE:-embedded}"
   RELDIR="$RELEASE_ROOT_DIR/clients/$REL_NAME/releases"

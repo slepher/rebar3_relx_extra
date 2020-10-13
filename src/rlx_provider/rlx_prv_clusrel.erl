@@ -121,12 +121,13 @@ write_cluster_files(State, SubReleases, Release) ->
           end, SubReleases),
     case rlx_release:metadata(Release) of
         {ok, {release, _ErlInfo, _ErtsInfo, Apps}} ->
+            Apps1 = normalize_apps(Apps),
             ReleaseName = rlx_release:name(Release),
             OutputDir = rlx_state:output_dir(State),
             ReleaseDir = rlx_util:release_output_dir(State, Release),
             ReleaseName = rlx_release:name(Release),
             ReleaseVsn = rlx_release:vsn(Release),
-            Meta = {cluster, ReleaseName, ReleaseVsn, SubReleaseDatas, Apps},
+            Meta = {cluster, ReleaseName, ReleaseVsn, SubReleaseDatas, Apps1},
             ReleaseFile = filename:join([OutputDir, "releases", atom_to_list(ReleaseName) ++ ".clus"]),
             ReleaseFile1 = filename:join([ReleaseDir, atom_to_list(ReleaseName) ++ ".clus"]),
             ok = ec_file:write_term(ReleaseFile, Meta),
@@ -293,3 +294,11 @@ make_boot_script_variables(State) ->
         _ ->
             [{"ERTS_LIB_DIR", code:lib_dir()}]
     end.
+
+normalize_apps(Apps) ->
+    lists:map(
+      fun({Name, Vsn}) ->
+              {Name, Vsn};
+         ({Name, Vsn, _LoadType}) ->
+              {Name, Vsn}
+      end, Apps).

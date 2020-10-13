@@ -188,8 +188,8 @@ get_apps(Name, OldVerPath, OldVer, NewVerPath, NewVer, State) ->
     OldApps = rebar3_appup_rel_utils:exclude_otp_apps(OldApps0, State),
     rebar_api:debug("previous version apps: ~p", [OldApps]),
 
-    NewApps0 = get_clus_apps(Name, NewVer, NewVerPath),
-    NewApps = rebar3_appup_rel_utils:exclude_otp_apps(NewApps0, State),
+    NewApps = get_clus_apps(Name, NewVer, NewVerPath),
+    %% NewApps = rebar3_appup_rel_utils:exclude_otp_apps(NewApps0, State),
     rebar_api:debug("current version apps: ~p", [NewApps]),
 
     AddedApps = app_list_diff(NewApps, OldApps),

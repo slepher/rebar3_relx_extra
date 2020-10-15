@@ -69,6 +69,7 @@ tar_files(State, Release, SubReleases, OutputDir) ->
     Applications = rlx_release:applications(Release),
     ErtsVsn = rlx_release:erts(Release),
     Paths = paths(State, OutputDir),
+    Applications1 = simplize_applications(Applications),
     ApplicationsFiles = 
         lists:foldl(
           fun({AppName, AppVsn}, Acc) ->
@@ -76,7 +77,7 @@ tar_files(State, Release, SubReleases, OutputDir) ->
                       rlx_ext_application_lib:application_files(
                         AppName, AppVsn, Paths, [{dirs, [include | maybe_src_dirs(State)]}, {output_dir, OutputDir}]),
                   ApplicationFiles ++ Acc
-          end, [], Applications),
+          end, [], Applications1),
     SubReleaseFiles = 
         lists:foldl(
           fun({SubReleaseName, SubReleaseVsn}, Acc) ->
@@ -210,3 +211,11 @@ maybe_src_dirs(State) ->
         false -> [];
         true -> [src]
     end.
+
+simplize_applications(Applications) ->
+    lists:map(
+      fun({AppName, AppVsn, _LoadType}) ->
+              {AppName, AppVsn};
+         ({AppName, AppVsn}) ->
+              {AppName, AppVsn}
+      end, Applications).

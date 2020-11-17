@@ -29,7 +29,7 @@
          format_error/1]).
 
 -define(PROVIDER, clusuptar).
--define(DEPS, [clusup]).
+-define(DEPS, []).
 
 -include_lib("relx/include/relx.hrl").
 

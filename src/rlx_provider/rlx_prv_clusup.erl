@@ -252,7 +252,6 @@ changed(Metas, MetasFrom) ->
 make_upfrom_release_scripts(ClusterName, Releases, UpFromReleases, State) ->
     lists:foldl(
       fun({RelName, RelVsn, _RelApps}, {ok, StateAcc}) ->
-
               case lists:keyfind(RelName, 1, UpFromReleases) of
                   undefined ->
                       {ok, State};
@@ -359,6 +358,9 @@ make_upfrom_script(State, Release, UpFrom) ->
         error ->
             ?RLX_ERROR({relup_generation_error, CurrentRel, UpFromRel});
         {ok, RelUp, _, []} ->
+            ec_cmd_log:info(rlx_state:log(State),
+                          "clusup ~p from ~s to ~s start creating!~n",
+                          [RelName, UpFromVsn, RelVsn]),
             write_relup_file(State, Release, RelUp),
             ec_cmd_log:info(rlx_state:log(State),
                           "clusup ~p from ~s to ~s successfully created!~n",

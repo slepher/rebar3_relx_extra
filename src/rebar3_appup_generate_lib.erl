@@ -815,9 +815,27 @@ merge_instructions_0(PreContents, PostContents, OldVer, NewVer,
       Res :: list(tuple()).
 merge_pre_post_instructions(PreContents, PostContents, Direction, OldVer,
                             NewVer, Instructions) ->
-    expand_instructions(PreContents, Direction, OldVer, NewVer) ++
-    Instructions ++
-    expand_instructions(PostContents, Direction, OldVer, NewVer).
+    PreInstructions = expand_instructions(PreContents, Direction, OldVer, NewVer),
+    PostInstructions =     expand_instructions(PostContents, Direction, OldVer, NewVer),
+    RemovDuplicatedInstructions = remove_duplicated_instructions(PreInstructions ++ PostInstructions, Instructions),
+    PreInstructions ++ RemovDuplicatedInstructions ++ PostInstructions.
+    %% expand_instructions(PreContents, Direction, OldVer, NewVer) ++
+    %% Instructions ++
+    %% expand_instructions(PostContents, Direction, OldVer, NewVer).
+
+remove_duplicated_instructions(TargetInstruction, Instructions) ->
+    lists:reverse(
+      lists:foldl(
+        fun({update, Name, {advanced, []}, _PrePurge, _PostPurge, _Deps} = Update, Acc) ->
+                case lists:member(update, 1, TargetInstruction) and lists:member(Name, 2, TargetInstruction) of
+                    true ->
+                        Acc;
+                    false ->
+                        [Update|Acc]
+                end;
+           (_Update, Acc) ->
+                Acc
+        end, [], Instructions)).
 
 -spec read_pre_post_contents(Path) -> Res when
       Path :: undefined | string(),

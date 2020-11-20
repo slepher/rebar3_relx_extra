@@ -827,14 +827,14 @@ remove_duplicated_instructions(TargetInstruction, Instructions) ->
     lists:reverse(
       lists:foldl(
         fun({update, Name, {advanced, []}, _PrePurge, _PostPurge, _Deps} = Update, Acc) ->
-                case lists:member(update, 1, TargetInstruction) and lists:member(Name, 2, TargetInstruction) of
+                case lists:keymember(update, 1, TargetInstruction) and lists:keymember(Name, 2, TargetInstruction) of
                     true ->
                         Acc;
                     false ->
                         [Update|Acc]
                 end;
-           (_Update, Acc) ->
-                Acc
+           (Update, Acc) ->
+                [Update|Acc]
         end, [], Instructions)).
 
 -spec read_pre_post_contents(Path) -> Res when

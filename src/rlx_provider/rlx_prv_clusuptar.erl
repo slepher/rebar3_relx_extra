@@ -56,7 +56,8 @@ do(State) ->
                 {ok, Releases} ->
                     ApplicationFiles = application_files(DiffApplications, OutputDir, State),
                     ReleaseFiles = client_files(Releases, OutputDir, State),
-                    make_tar(OutputDir, Clusname, ClusVsn, FromVsn, ReleaseFiles ++ ApplicationFiles, State),
+                    ClusupFile = {"clusup", filename:join([OutputDir, "clusup"])},
+                    make_tar(OutputDir, Clusname, ClusVsn, FromVsn, ReleaseFiles ++ ApplicationFiles ++ [ClusupFile], State),
                     {ok, State};
                 {error, Reason} ->
                     {error, Reason}

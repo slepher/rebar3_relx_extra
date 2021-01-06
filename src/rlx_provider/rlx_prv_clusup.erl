@@ -31,7 +31,7 @@
 -include_lib("relx/include/relx.hrl").
 
 -define(PROVIDER, clusup).
--define(DEPS, []).
+-define(DEPS, [resolve_release]).
 -define(HOOKS,  {[], []}).
 %%============================================================================
 %% API
@@ -384,10 +384,11 @@ make_upfrom_script(State, Release, UpFrom) ->
             ?RLX_ERROR({relup_script_generation_error, Module, Errors})
     end.
 
-write_clusup_file(State, _ClusterName, ClusterVsn, Clusup) ->
+write_clusup_file(State, ClusterName, ClusterVsn, Clusup) ->
+    ClusupBasename = atom_to_list(ClusterName) ++ ".clusup",
     OutputDir = rlx_state:output_dir(State),
-    ClusupFile1 = filename:join([OutputDir, "releases", ClusterVsn, "clusup"]),
-    ClusupFile2 = filename:join([OutputDir, "clusup"]),
+    ClusupFile1 = filename:join([OutputDir, "releases", ClusterVsn, ClusupBasename]),
+    ClusupFile2 = filename:join([OutputDir, "releases", ClusupBasename]),
     ok = ec_file:write_term(ClusupFile1, Clusup),
     ok = ec_file:write_term(ClusupFile2, Clusup).
 

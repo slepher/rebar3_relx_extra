@@ -29,7 +29,7 @@
          format_error/1]).
 
 -define(PROVIDER, clusuptar).
--define(DEPS, []).
+-define(DEPS, [resolve_release]).
 
 -include_lib("relx/include/relx.hrl").
 
@@ -56,8 +56,13 @@ do(State) ->
                 {ok, Releases} ->
                     ApplicationFiles = application_files(DiffApplications, OutputDir, State),
                     ReleaseFiles = client_files(Releases, OutputDir, State),
-                    ClusupFile = {"clusup", filename:join([OutputDir, "clusup"])},
-                    make_tar(OutputDir, Clusname, ClusVsn, FromVsn, ReleaseFiles ++ ApplicationFiles ++ [ClusupFile], State),
+                    ClusupBasename = atom_to_list(Clusname) ++ ".clusup",
+                    ClusBasename = atom_to_list(Clusname) ++ ".clus",
+                    ClusFiles = [{filename:join(["releases", ClusVsn, ClusBasename]),
+                                  filename:join([OutputDir, "releases", ClusVsn, ClusBasename])},
+                                 {filename:join(["releases", ClusVsn, ClusupBasename]),
+                                  filename:join([OutputDir, "releases", ClusVsn, ClusupBasename])}],
+                    make_tar(OutputDir, Clusname, ClusVsn, FromVsn, ReleaseFiles ++ ApplicationFiles ++ ClusFiles, State),
                     {ok, State};
                 {error, Reason} ->
                     {error, Reason}

@@ -128,7 +128,6 @@ cluster_files(OutputDir, RelName, RelVsn) ->
     BinFile = atom_to_list(RelName),
     ClusFile = atom_to_list(RelName) ++ ".clus",
     [{filename:join(["bin", BinFile]), filename:join([OutputDir, "bin", BinFile])}, 
-     {filename:join(["releases", ClusFile]), filename:join([OutputDir, "releases", ClusFile])},
      {filename:join(["releases", RelVsn, ClusFile]),  filename:join([OutputDir, "releases", RelVsn, ClusFile])}].
 
 sub_release_files(State, OutputDir) ->

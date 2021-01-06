@@ -175,7 +175,7 @@ make_clusup(ClusterName, ClusterVsn, Clusters, State) ->
                             ?RLX_ERROR({no_upfrom_release_found, ClusterVsn});
                         {UpFromReleases, UpFromApps} ->
                             make_upfrom_cluster_script(
-                              ClusterName, ClusterVsn, Releases, Apps, UpFromReleases, UpFromApps, State1),
+                              ClusterName, ClusterVsn, UpFrom, Releases, Apps, UpFromReleases, UpFromApps, State1),
                             make_upfrom_release_scripts(ClusterName, Releases, UpFromReleases, State1)
                     end;
                 {error, Reason} ->
@@ -221,12 +221,12 @@ get_last_release_vsn(ClusterName, ClusterVsn, Clusters) ->
 get_releases(ClusterName, ClusterVsn, Clusters) ->
     proplists:get_value({ClusterName, ClusterVsn}, Clusters).
 
-make_upfrom_cluster_script(ClusterName, ClusterVsn, Releases, Apps, UpFromReleases, UpFromApps, State) ->
+make_upfrom_cluster_script(ClusterName, ClusterVsn, UpFromClusterVsn, Releases, Apps, UpFromReleases, UpFromApps, State) ->
     Releases1 = lists:map(fun({Name, Vsn, _Apps}) -> {Name, Vsn} end, Releases),
     UpFromReleases1 = lists:map(fun({Name, Vsn, _Apps}) -> {Name, Vsn} end, UpFromReleases),
     ReleasesChanged = changed(Releases1, UpFromReleases1),
     AppsChanged = changed(Apps, UpFromApps),
-    Meta = {clusup, ClusterName, ReleasesChanged, AppsChanged},
+    Meta = {clusup, ClusterName, ClusterVsn, UpFromClusterVsn, ReleasesChanged, AppsChanged, []},
     write_clusup_file(State, ClusterName, ClusterVsn, Meta).
     
 changed(Metas, MetasFrom) ->

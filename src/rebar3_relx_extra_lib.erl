@@ -15,10 +15,10 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
-do(RlxModule, RlxAction, RlxProvider, State) ->
+do(_RlxModule, _RlxAction, RlxProvider, State) ->
     case rlx_ext_lib:update_rlx(State) of
         {ok, State1} ->
-            case rebar_relx:do(RlxModule, RlxAction, RlxProvider, State1) of
+            case rebar_relx:do(RlxProvider, State1) of
                 {ok, _} ->
                     {ok, State1};
                 {error, Reason} ->

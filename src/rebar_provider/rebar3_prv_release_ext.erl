@@ -17,7 +17,7 @@ init(State) ->
             {bare, true},                 % The task can be run by the user, always true
             {deps, ?DEPS},                % The list of dependencies
             {example, "rebar3 rebar3 relx extra"}, % How to use the plugin
-            {opts, relx:opt_spec_list()}, % list of options understood by the plugin
+            {opts, rebar_relx:opt_spec_list()}, % list of options understood by the plugin
             {short_desc, "Build release of project ext."},
             {desc, "Build release of project ext"}
     ]),

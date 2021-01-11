@@ -31,7 +31,7 @@
 -define(PROVIDER, clusuptar).
 -define(DEPS, [resolve_release]).
 
--include_lib("relx/include/relx.hrl").
+-include_lib("relx/src/relx.hrl").
 
 %%============================================================================
 %% API

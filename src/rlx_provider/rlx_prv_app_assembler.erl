@@ -28,7 +28,7 @@
          do/1,
          format_error/1]).
 
--include_lib("relx/include/relx.hrl").
+-include_lib("relx/src/relx.hrl").
 
 -define(PROVIDER, app_assembler).
 -define(DEPS, [resolve_release]).

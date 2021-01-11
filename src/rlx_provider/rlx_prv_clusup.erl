@@ -28,7 +28,7 @@
          do/1,
          format_error/1]).
 
--include_lib("relx/include/relx.hrl").
+-include_lib("relx/src/relx.hrl").
 
 -define(PROVIDER, clusup).
 -define(DEPS, [resolve_release]).
@@ -91,8 +91,6 @@ format_error({relup_script_generation_error, Module, Errors}) ->
      rlx_util:indent(2), Module:format_error(Errors)];
 format_error(Reason) ->
     io_lib:format("~p", [Reason]).
-
-
 
 -spec add_system_lib_dir(rlx_state:t()) -> [file:name()].
 add_system_lib_dir(State) ->

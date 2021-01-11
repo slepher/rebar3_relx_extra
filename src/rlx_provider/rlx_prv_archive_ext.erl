@@ -31,7 +31,7 @@
 -define(PROVIDER, tar_ext).
 -define(DEPS, [release_ext]).
 
--include_lib("relx/include/relx.hrl").
+-include_lib("relx/src/relx.hrl").
 
 %%============================================================================
 %% API

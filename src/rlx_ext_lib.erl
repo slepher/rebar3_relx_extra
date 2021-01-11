@@ -26,8 +26,8 @@ sub_release_state(State, Release, ReleaseName, ReleaseVsn) ->
     SubConfig = rlx_release:config(SubRelease),
     State1 = rlx_state:default_configured_release(State, ReleaseName, ReleaseVsn),
     State2 = rlx_state:base_output_dir(State1, filename:join([OutputDir, "clients"])),
-    {ok, State3} = lists:foldl(fun rlx_config:load_terms/2, {ok, State2}, InitConfig),
-    {ok, State4} = lists:foldl(fun rlx_config:load_terms/2, {ok, State3}, SubConfig),
+    {ok, State3} = lists:foldl(fun rlx_config:load/2, {ok, State2}, InitConfig),
+    {ok, State4} = lists:foldl(fun rlx_config:load/2, {ok, State3}, SubConfig),
     State4.
 
 update_rlx(State) ->
@@ -48,8 +48,8 @@ update_rlx(State) ->
     end.
 
 rlx_state(Relx) ->
-    State = rlx_state:new([], [release]),
-    lists:foldl(fun rlx_config:load_terms/2, {ok, State}, Relx).
+    State = rlx_state:new(),
+    lists:foldl(fun rlx_config:load/2, {ok, State}, Relx).
 
 merge_relx_ext(Relx, RelxExt) ->
     case rlx_state(Relx) of
@@ -79,7 +79,7 @@ merge_relx_ext(Relx, RelxExt) ->
 
 rlx_releases(State) ->
     Releases = rlx_state:configured_releases(State),
-    RelVsns = ec_dictionary:keys(Releases),
+    RelVsns = maps:keys(Releases),
     RlxReleaseMap = 
         lists:foldl(
           fun({ReleaseName, ReleaseVsn}, Acc) ->

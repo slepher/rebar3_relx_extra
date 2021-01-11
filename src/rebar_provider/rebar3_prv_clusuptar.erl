@@ -17,7 +17,7 @@ init(State) ->
                                  {example, "rebar3 clusup"},
                                  {short_desc, "Create clusup of cluster release."},
                                  {desc, "Create clusup of cluster release."},
-                                 {opts, relx:opt_spec_list()}]),
+                                 {opts, rebar_relx:opt_spec_list()}]),
     State1 = rebar_state:add_provider(State, Provider),
     {ok, State1}.
 

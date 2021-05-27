@@ -14,6 +14,7 @@
 %%% API
 %%%===================================================================
 realize_sub_releases(Release, SubReleases, State) ->
+    io:format("get sub releases ~p~n", [SubReleases]),
     Config = rlx_release:config(Release),
     InclApps = incl_apps(Config),
     DepGraph = create_dep_graph(State),

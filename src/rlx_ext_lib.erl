@@ -21,11 +21,10 @@
 sub_release_state(State, Release, ReleaseName, ReleaseVsn) ->
     Config = rlx_release:config(Release),
     InitConfig = proplists:get_value(init_config, Config),
-    OutputDir = rlx_state:output_dir(State),
+    OutputDir = rlx_state:base_output_dir(State),
     SubRelease = rlx_state:get_configured_release(State, ReleaseName, ReleaseVsn),
     SubConfig = rlx_release:config(SubRelease),
-    State1 = rlx_state:default_configured_release(State, ReleaseName, ReleaseVsn),
-    State2 = rlx_state:base_output_dir(State1, filename:join([OutputDir, "clients"])),
+    State2 = rlx_state:base_output_dir(State, filename:join([OutputDir, "clients"])),
     {ok, State3} = lists:foldl(fun rlx_config:load/2, {ok, State2}, InitConfig),
     {ok, State4} = lists:foldl(fun rlx_config:load/2, {ok, State3}, SubConfig),
     State4.
@@ -35,14 +34,7 @@ update_rlx(State) ->
     RelxExt = rebar_state:get(State, relx_ext, []),
     case merge_relx_ext(Relx, RelxExt) of
         {ok, Relx1} ->
-            Relx2 = [{add_providers, [rlx_prv_release_ext,
-                                      rlx_prv_archive_ext, 
-                                      rlx_prv_app_assembler,
-                                      rlx_prv_clusrel, 
-                                      rlx_prv_clusup, 
-                                      rlx_prv_clustar,
-                                      rlx_prv_clusuptar]}|Relx1],
-            {ok, rebar_state:set(State, relx, Relx2)};
+            {ok, rebar_state:set(State, relx, Relx1)};
         {error, Reason} ->
             {error, Reason}
     end.
@@ -144,12 +136,3 @@ goals(ReleaseName, ReleaseVsn, RelxState) ->
         _:not_found ->
             {error, {ReleaseName, ReleaseVsn, not_found}}
     end.
-%%--------------------------------------------------------------------
-%% @doc
-%% @spec
-%% @end
-%%--------------------------------------------------------------------
-
-%%%===================================================================
-%%% Internal functions
-%%%===================================================================

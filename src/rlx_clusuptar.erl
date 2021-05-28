@@ -23,31 +23,28 @@
 -module(rlx_clusuptar).
 
 
--export([do/1, format_error/1]).
-
+-export([do/4, format_error/1]).
 
 %%============================================================================
 %% API
 %%============================================================================
-
--spec do(rlx_state:t()) -> {ok, rlx_state:t()} | relx:error().
-do(State) ->
-    {Clusname, ClusVsn} = rlx_state:default_configured_release(State),
-    OutputDir = rlx_state:output_dir(State),
-    FromVsn = rlx_state:upfrom(State),
-    case diff_applications(OutputDir, Clusname, ClusVsn, FromVsn) of
+do(ClusName, ClusVsn, UpFromVsn, State) ->
+    RelxState = rlx_ext_state:rlx_state(State),
+    Dir = rlx_state:base_output_dir(RelxState),
+    OutputDir = filename:join(Dir, ClusName),
+    case diff_applications(OutputDir, ClusName, ClusVsn, UpFromVsn) of
         {ok, DiffApplications} ->
-            case diff_releases(OutputDir, Clusname, ClusVsn, FromVsn) of
+            case diff_releases(OutputDir, ClusName, ClusVsn, UpFromVsn) of
                 {ok, Releases} ->
-                    ApplicationFiles = application_files(DiffApplications, OutputDir, State),
+                    ApplicationFiles = application_files(DiffApplications, OutputDir, RelxState),
                     ReleaseFiles = client_files(Releases, OutputDir, State),
-                    ClusupBasename = atom_to_list(Clusname) ++ ".clusup",
-                    ClusBasename = atom_to_list(Clusname) ++ ".clus",
+                    ClusupBasename = atom_to_list(ClusName) ++ ".clusup",
+                    ClusBasename = atom_to_list(ClusName) ++ ".clus",
                     ClusFiles = [{filename:join(["releases", ClusVsn, ClusBasename]),
                                   filename:join([OutputDir, "releases", ClusVsn, ClusBasename])},
                                  {filename:join(["releases", ClusVsn, ClusupBasename]),
                                   filename:join([OutputDir, "releases", ClusVsn, ClusupBasename])}],
-                    make_tar(OutputDir, Clusname, ClusVsn, FromVsn, ReleaseFiles ++ ApplicationFiles ++ ClusFiles, State),
+                    make_tar(OutputDir, ClusName, ClusVsn, UpFromVsn, ReleaseFiles ++ ApplicationFiles ++ ClusFiles, RelxState),
                     {ok, State};
                 {error, Reason} ->
                     {error, Reason}
@@ -108,7 +105,7 @@ client_files(Clients, OutputDir, _State) ->
 make_tar(OutputDir, Name, Vsn, FromVsn, Files, State) ->
     TarFile = filename:join(OutputDir, atom_to_list(Name) ++ "_" ++ FromVsn ++ "-" ++ Vsn ++ ".tar.gz"),
     ok = erl_tar:create(TarFile, Files, [dereference,compressed]),
-    ec_cmd_log:info(rlx_state:log(State), "tarball ~s successfully created!~n", [TarFile]),
+    rebar_api:info("tarball ~s successfully created!~n", [TarFile]),
     {ok, State}.
 
 get_releases(Relfile) ->
@@ -132,7 +129,7 @@ get_apps(Relfile) ->
     end.
 
 paths(State, OutputDir) ->
-    SystemLibs = rlx_state:get(State, system_libs, true),
+    SystemLibs = rlx_state:system_libs(State),
     Paths = rlx_ext_application_lib:path([{path, [filename:join([OutputDir, "lib", "*", "ebin"])]}]),
         case SystemLibs of
             true ->
@@ -157,7 +154,16 @@ format_error(Reason) ->
     io_lib:format("~p", [Reason]).
 
 maybe_src_dirs(State) ->
-    case rlx_state:get(State, include_src, true) of
+    case include_src_or_default(State) of
         false -> [];
         true -> [src]
+    end.
+
+%% when running `tar' the default is to exclude src
+include_src_or_default(State) ->
+    case rlx_state:include_src(State) of
+        undefined ->
+            false;
+        IncludeSrc ->
+            IncludeSrc
     end.

@@ -52,13 +52,13 @@ do(Provider, State) ->
 
     case Provider of
         Provider when Provider == clusup; Provider == clusuptar ->
-            [{Cluster, ToVsn}|_] = Clusters,
+            [{ClusName, ToVsn}|_] = Clusters,
             UpFromVsn = proplists:get_value(upfrom, Opts, undefined),
             case Provider of
                 clusup ->
-                    relx_ext:build_clusup(Cluster, ToVsn, UpFromVsn, RelxExtState);
+                    relx_ext:build_clusup(ClusName, ToVsn, UpFromVsn, RelxExtState);
                 clusuptar ->
-                    relx_ext:build_clusuptar(Cluster, ToVsn, UpFromVsn, RelxExtState)
+                    relx_ext:build_clusuptar(ClusName, ToVsn, UpFromVsn, RelxExtState)
             end;
         _ ->
             parallel_run(Provider, Clusters, all_apps(State), RelxExtState)

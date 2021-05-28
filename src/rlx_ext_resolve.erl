@@ -20,6 +20,7 @@ solve_cluster(Cluster, Apps, State) ->
     {ok, State1} = lists:foldl(fun rlx_ext_config:load/2, {ok, State}, Config),
     RelxState0 = rlx_ext_state:rlx_state(State1),
     RelxState1 = rlx_state:available_apps(RelxState0, Apps),
+    
     {ok, SolvedClusRelease, RelxState2} = rlx_resolve:solve_release(ClusRelease, RelxState1),
     Releases = rlx_cluster:releases(Cluster),
     IncludeApps = rlx_ext_state:include_apps(State1),

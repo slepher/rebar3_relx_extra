@@ -31,14 +31,16 @@
 %%============================================================================
 -spec do(atom(), string(), string(), rlx_state:t()) -> {ok, rlx_state:t()} | relx:error().
 do(ClusterName, ClusterVsn, FromVsn, State) ->
-    Dir = rlx_state:base_output_dir(State),
+    RelxState = rlx_ext_state:rlx_state(State),
+    Dir = rlx_state:base_output_dir(RelxState),
+    OutputDir = filename:join(Dir, atom_to_list(ClusterName)),
     case resolve_cluster(find_cluster_file(ClusterName, ClusterVsn, Dir)) of
         {ok, {Releases, Apps}} ->
             case resolve_cluster(find_cluster_file(ClusterName, FromVsn, Dir)) of
                 {ok, {UpFromReleases, UpFromApps}} ->
                     make_upfrom_cluster_script(
-                      ClusterName, ClusterVsn, FromVsn, Releases, Apps, UpFromReleases, UpFromApps, State),
-                    make_upfrom_release_scripts(ClusterName, Releases, UpFromReleases, State);
+                      ClusterName, ClusterVsn, FromVsn, Releases, Apps, UpFromReleases, UpFromApps, OutputDir),
+                    make_upfrom_release_scripts(Releases, UpFromReleases, OutputDir, RelxState);
                 {error, _Reason} ->
                     ?RLX_ERROR({no_upfrom_release_found, ClusterVsn})
             end;
@@ -96,13 +98,13 @@ find_cluster_file(Name, Vsn, Dir) when is_atom(Name) ,
 find_cluster_file(Name, Vsn, _) ->
     erlang:error(?RLX_ERROR({bad_rel_tuple, {Name, Vsn}})).
 
-make_upfrom_cluster_script(ClusterName, ClusterVsn, UpFromClusterVsn, Releases, Apps, UpFromReleases, UpFromApps, State) ->
+make_upfrom_cluster_script(ClusterName, ClusterVsn, UpFromClusterVsn, Releases, Apps, UpFromReleases, UpFromApps, OutputDir) ->
     Releases1 = lists:map(fun({Name, Vsn, _Apps}) -> {Name, Vsn} end, Releases),
     UpFromReleases1 = lists:map(fun({Name, Vsn, _Apps}) -> {Name, Vsn} end, UpFromReleases),
     ReleasesChanged = changed(Releases1, UpFromReleases1),
     AppsChanged = changed(Apps, UpFromApps),
     Meta = {clusup, ClusterName, ClusterVsn, UpFromClusterVsn, ReleasesChanged, AppsChanged, []},
-    write_clusup_file(State, ClusterName, ClusterVsn, Meta).
+    write_clusup_file(ClusterName, ClusterVsn, Meta, OutputDir).
     
 changed(Metas, MetasFrom) ->
     {Changes, Adds, Dels} = 
@@ -124,28 +126,24 @@ changed(Metas, MetasFrom) ->
     Dels1 = lists:map(fun({Name, Vsn}) -> {del, Name, Vsn} end, Dels),
     Adds ++ Dels1 ++ Changes.
 
-make_upfrom_release_scripts(ClusterName, Releases, UpFromReleases, State) ->
-    lists:foldl(
-      fun({RelName, RelVsn, _RelApps}, {ok, StateAcc}) ->
+make_upfrom_release_scripts(Releases, UpFromReleases, OutputDir, State) ->
+    lists:foreach(
+      fun({RelName, RelVsn, _RelApps}) ->
               case lists:keyfind(RelName, 1, UpFromReleases) of
                   undefined ->
-                      {ok, State};
+                      ok;
                   {RelName, UpFromRelVsn, _} ->
                       case RelVsn == UpFromRelVsn of
                           true ->
-                              {ok, State};
+                              ok;
                           false ->
-                              make_upfrom_script(ClusterName, RelName, RelVsn, UpFromRelVsn, StateAcc)
+                              make_upfrom_script(RelName, RelVsn, UpFromRelVsn, OutputDir, State)
                       end
-              end;
-         (_, {error, Reason}) ->
-              {error, Reason}
-      end, {ok, State}, Releases).
+              end
+      end, Releases).
 
-
-make_upfrom_script(ClusterName, RelName, RelVsn, UpFromVsn, State) ->
-    OutputDir = rlx_state:base_output_dir(State),
-    ClientDir = filename:join([OutputDir, ClusterName, "clients"]),
+make_upfrom_script(RelName, RelVsn, UpFromVsn, OutputDir, State) ->
+    ClientDir = filename:join(OutputDir, "clients"),
     WarningsAsErrors = rlx_state:warnings_as_errors(State),
     Options = [no_warn_sasl,
                {outdir, ClientDir},
@@ -168,14 +166,12 @@ make_upfrom_script(ClusterName, RelName, RelVsn, UpFromVsn, State) ->
     %% rebar_api:debug("systools:make_relup(~p, ~p, ~p, ~p)", [CurrentRel, UpFromRel, UpFromRel, Options]),
     case systools:make_relup(CurrentRel, [UpFromRel], [UpFromRel], Options) of
         ok ->
-            rebar_api:info("relup from ~s to ~s successfully created!~n", [UpFromRel, CurrentRel]),
-            {ok, State};
+            rebar_api:info("relup from ~s to ~s successfully created!~n", [UpFromRel, CurrentRel]);
         error ->
             erlang:error(?RLX_ERROR({relup_generation_error, CurrentRel, UpFromRel}));
         {ok, RelUp, _, []} ->
             write_relup_file(RelName, RelVsn, RelUp, ClientDir),
-            rebar_api:info("relup ~p from ~s to ~s successfully created!~n", [RelName, UpFromVsn, RelVsn]),
-            {ok, State};
+            rebar_api:info("relup ~p from ~s to ~s successfully created!~n", [RelName, UpFromVsn, RelVsn]);
         {ok, RelUp, Module, Warnings} ->
             case WarningsAsErrors of
                 true ->
@@ -186,17 +182,14 @@ make_upfrom_script(ClusterName, RelName, RelVsn, UpFromVsn, State) ->
                     ?RLX_ERROR({relup_script_generation_warn, Module, Warnings});
                 false ->
                     write_relup_file(RelName, RelVsn, RelUp, ClientDir),
-                    rebar_api:warn(format_error({relup_script_generation_warn, Module, Warnings}), []),
-                    {ok, State}
+                    rebar_api:warn(format_error({relup_script_generation_warn, Module, Warnings}), [])
             end;
         {error,Module,Errors} ->
             ?RLX_ERROR({relup_script_generation_error, Module, Errors})
     end.
 
-write_clusup_file(State, ClusterName, ClusterVsn, Clusup) ->
+write_clusup_file(ClusterName, ClusterVsn, Clusup, OutputDir) ->
     ClusupBasename = atom_to_list(ClusterName) ++ ".clusup",
-    BaseOutputDir = rlx_state:base_output_dir(State),
-    OutputDir = filename:join([BaseOutputDir, ClusterName]),
     ClusupFile1 = filename:join([OutputDir, "releases", ClusterVsn, ClusupBasename]),
     ClusupFile2 = filename:join([OutputDir, "releases", ClusupBasename]),
     ok = ec_file:write_term(ClusupFile1, Clusup),

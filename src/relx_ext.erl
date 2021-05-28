@@ -20,43 +20,24 @@
 %%% API
 %%%===================================================================
 build_clusrel(Cluster, Apps, State) ->
+    rebar_api:info("apps is ~p~n", [Apps]),
     {ok, RealizedCluster, State1} =
         rlx_ext_resolve:solve_cluster(Cluster, Apps, State),
     {ok, State2} = rlx_app_assemble:do(RealizedCluster, State1),
     rlx_clusrel:do(RealizedCluster, State2).
 
-build_clustar(RelNameOrUndefined, Apps, State) when is_atom(RelNameOrUndefined) ->
-    {RelName, RelVsn} = pick_release_version(RelNameOrUndefined, State),
-    Release = #{name => RelName,
-                vsn  => RelVsn},
-    build_clustar_1(Release, Apps, State);
-build_clustar({RelName, RelVsn}, Apps, State) when is_atom(RelName) ,
-                                                   is_list(RelVsn) ->
-    Release = #{name => RelName,
-                vsn => RelVsn},
-    RealizedRelease = build_clustar_1(Release, Apps, State),
-    {ok, rlx_state:add_realized_release(State, RealizedRelease)};
-build_clustar(Release=#{name := _RelName,
-                        vsn  := _RelVsn}, Apps, State) ->
-    RealizedRelease = build_clustar_1(Release, Apps, State),
-    {ok, rlx_state:add_realized_release(State, RealizedRelease)};
-build_clustar(Release, _, _) ->
-    ?RLX_ERROR({unrecognized_release, Release}).
-
-
-build_clustar_1(#{name := RelName,
-                 vsn := RelVsn}, Apps, RelxState) ->
-    Release = rlx_state:get_configured_release(RelxState, RelName, RelVsn),
-    {ok, RealizedRelease, RelxState1} =
-        rlx_resolve:solve_release(Release, rlx_state:available_apps(RelxState, Apps)),
-    rlx_clustar:do(RealizedRelease, RelxState1),
-    RelxState.
+build_clustar(Cluster, Apps, State) ->
+    rebar_api:info("apps is ~p~n", [Apps]),
+    {ok, RealizedCluster, State1} =
+        rlx_ext_resolve:solve_cluster(Cluster, Apps, State),
+    rlx_clustar:do(RealizedCluster, State1).
 
 build_clusup(ClusterName, ClusterVsn, UpFromVsn, RelxState) ->
     rlx_clusup:do(ClusterName, ClusterVsn, UpFromVsn, RelxState),
     RelxState.
 
-build_clusuptar(Release, ToVsn, UpFromVsn, RelxState) ->
+build_clusuptar(ClusterName, ClusterVsn, UpFromVsn, RelxState) ->
+    rlx_clusuptar:do(ClusterName, ClusterVsn, UpFromVsn, RelxState),
     RelxState.
 %%--------------------------------------------------------------------
 %% @doc

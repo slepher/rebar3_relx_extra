@@ -26,34 +26,36 @@
          format_error/1]).
 
 -define(PROVIDER, clustar).
--define(DEPS, [clusrel]).
+-define(DEPS, [compile]).
 
 %%============================================================================
 %% API
 %%============================================================================
-do(Release, State) ->
-    RelName = rlx_release:name(Release),
-    BaseOutputDir = rlx_state:base_output_dir(State),
-    OutputDir = filename:join(BaseOutputDir, RelName),
-    Config = rlx_release:config(Release),
-    SubReleases = proplists:get_value(ext, Config),
-    make_tar(State, Release, SubReleases, OutputDir).
+do(Cluster, State) ->
+    RelxState = rlx_ext_state:rlx_state(State),
+    rebar_api:info("get rlx_state ~p~n", [rlx_state:include_src(RelxState)]),
+    ClusName = rlx_cluster:name(Cluster),
+    BaseOutputDir = rlx_state:base_output_dir(RelxState),
+    OutputDir = filename:join(BaseOutputDir, ClusName),
+    Releases = rlx_cluster:solved_releases(Cluster),
+    make_tar(State, Cluster, Releases, OutputDir).
 
-make_tar(State, Release, SubReleases, OutputDir) ->
-    Name = rlx_release:name(Release),
-    Vsn = rlx_release:vsn(Release),
+make_tar(State, Cluster, SubReleases, OutputDir) ->
+    Name = rlx_cluster:name(Cluster),
+    Vsn = rlx_cluster:vsn(Cluster),
     TarFile = filename:join(OutputDir, atom_to_list(Name) ++ "_" ++ Vsn ++ ".tar.gz"),
-    Files = tar_files(State, Release, SubReleases, OutputDir),
+    RlxState = rlx_ext_state:rlx_state(State),
+    Files = tar_files(RlxState, Cluster, SubReleases, OutputDir),
     ok = erl_tar:create(TarFile, Files, [dereference,compressed]),
     rebar_api:info("tarball ~s successfully created!~n", [TarFile]),
     {ok, State}.
     
-tar_files(State, Release, SubReleases, OutputDir) ->
-    Name = rlx_release:name(Release),
-    Vsn = rlx_release:vsn(Release),
+tar_files(State, Cluster, SubReleases, OutputDir) ->
+    Name = rlx_cluster:name(Cluster),
+    Vsn = rlx_cluster:vsn(Cluster),
+    Release = rlx_cluster:solved_clus_release(Cluster),
     Applications = rlx_release:applications(Release),
     ErtsVsn = rlx_release:erts(Release),
-    io:format("erts is ~p~n", [ErtsVsn]),
     Paths = paths(State, OutputDir),
     Applications1 = simplize_applications(Applications),
     ApplicationsFiles = 
@@ -66,14 +68,8 @@ tar_files(State, Release, SubReleases, OutputDir) ->
           end, [], Applications1),
     SubReleaseFiles = 
         lists:foldl(
-          fun({SubReleaseName, SubReleaseVsn}, Acc) ->
-                  Releases = rlx_state:configured_releases(State),
-                  case maps:find({SubReleaseName, SubReleaseVsn}, Releases) of
-                      {ok, SubRelease} ->
-                          sub_release_files(SubRelease, State, OutputDir) ++ Acc;
-                      error ->
-                          Acc
-                  end
+          fun(SubRelease, Acc) ->
+                  sub_release_files(SubRelease, State, OutputDir) ++ Acc
           end, [], SubReleases),
     BinFiles = cluster_files(OutputDir, Name, Vsn),
     OverlayVars = rlx_overlay:generate_overlay_vars(State, Release),
@@ -202,15 +198,22 @@ filter(_) ->
     false.
 
 maybe_src_dirs(State) ->
-    case rlx_state:include_src(State) of
+    case include_src_or_default(State) of
         false -> [];
         true -> [src]
     end.
 
+%% when running `tar' the default is to exclude src
+include_src_or_default(State) ->
+    case rlx_state:include_src(State) of
+        undefined ->
+            false;
+        IncludeSrc ->
+            IncludeSrc
+    end.
+
 simplize_applications(Applications) ->
     lists:map(
-      fun({AppName, AppVsn, _LoadType}) ->
-              {AppName, AppVsn};
-         ({AppName, AppVsn}) ->
+      fun(#{name := AppName, vsn := AppVsn}) ->
               {AppName, AppVsn}
       end, Applications).

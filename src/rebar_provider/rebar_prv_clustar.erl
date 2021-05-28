@@ -15,7 +15,7 @@
          format_error/1]).
 
 -define(PROVIDER, clustar).
--define(DEPS, []).
+-define(DEPS, [compile]).
 
 %% ===================================================================
 %% Public API

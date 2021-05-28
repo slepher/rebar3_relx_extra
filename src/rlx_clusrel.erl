@@ -96,6 +96,7 @@ write_cluster_files(State, Releases, Release, OutputDir) ->
     ReleaseName = rlx_release:name(Release),
     ReleaseVsn = rlx_release:vsn(Release),
     Meta = {cluster, ReleaseName, ReleaseVsn, SubReleaseDatas, Apps1},
+    ok = ec_file:mkdir_p(ReleaseDir),
     ReleaseFile = filename:join([OutputDir, "releases", atom_to_list(ReleaseName) ++ ".clus"]),
     ReleaseFile1 = filename:join([ReleaseDir, atom_to_list(ReleaseName) ++ ".clus"]),
     ok = ec_file:write_term(ReleaseFile, Meta),

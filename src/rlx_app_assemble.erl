@@ -1,33 +1,30 @@
--module(rlx_ext_assemble).
+-module(rlx_app_assemble).
 
--export([do/2,
-         format_error/1]).
+-export([do/2, format_error/1]).
 
 -include_lib("relx/src/relx.hrl").
 -include_lib("relx/src/rlx_log.hrl").
 -include_lib("kernel/include/file.hrl").
 
-do(Cluster, ExtState) ->
-    Release = rlx_cluster:solved_clus_release(Cluster),
-    State = rlx_ext_state:rlx_state(ExtState),
+do(Release, State) ->
     RelName = rlx_release:name(Release),
-    ?log_info("Assembling release ~p-~s...", [RelName, rlx_release:vsn(Release)]),
+    rebar_api:info("Assembling release ~p-~s...", [RelName, rlx_release:vsn(Release)]),
     OutputDir = filename:join(rlx_state:base_output_dir(State), RelName),
-    ?log_debug("Release output dir ~s", [OutputDir]),
+    rebar_api:debug("Release output dir ~s", [OutputDir]),
     ok = create_output_dir(OutputDir),
     ok = copy_app_directories_to_output(Release, OutputDir, State),
 
-    {ok, State1} = create_release(State, Release, OutputDir),
-    ExtState1 = rlx_ext_state:rlx_state(ExtState, State1),
+    %% relx built-in form of systools exref feature
+    maybe_check_for_undefined_functions(State, Release),
 
-    ?log_info("Release successfully assembled: ~s", [rlx_file_utils:print_path(OutputDir)]),
+    rebar_api:info("Release successfully assembled: ~s", [rlx_file_utils:print_path(OutputDir)]),
 
     %% don't strip the release in debug mode since that would strip
     %% the beams symlinked to and no one wants that
-    case rlx_state:debug_info(State1) =:= strip
-        andalso rlx_state:mode(State1) =/= dev of
+    case rlx_state:debug_info(State) =:= strip
+        andalso rlx_state:mode(State) =/= dev of
         true ->
-            ?log_debug("Stripping release beam files", []),
+            rebar_api:debug("Stripping release beam files", []),
             %% make *.beam to be writeable for strip.
             ModeChangedFiles = [ 
                 OrigFileMode
@@ -44,7 +41,7 @@ do(Cluster, ExtState) ->
                 ],
             try beam_lib:strip_release(OutputDir) of
                 {ok, _} ->
-                    {ok, ExtState1};
+                    {ok, State};
                 {error, _, Reason} ->
                     erlang:error(?RLX_ERROR({strip_release, Reason}))
             after
@@ -53,7 +50,7 @@ do(Cluster, ExtState) ->
                     || {File, OrigMode} <- ModeChangedFiles ]
             end;
         false ->
-            {ok, ExtState1}
+            {ok, State}
     end.
 
 %% internal functions
@@ -259,95 +256,6 @@ copy_dir(SourceDir, TargetDir, ExcludeFiles) ->
                                                      filename:basename(F)]), [recursive, {file_info, [mode, time]}])
                   end, SourceFiles -- ExcludeFiles).
 
-create_release(State0, Release0, OutputDir) ->
-    ReleaseDir = rlx_util:release_output_dir(State0, Release0),
-    ReleaseFile = filename:join([ReleaseDir, [rlx_release:name(Release0), ".rel"]]),
-    ok = rlx_file_utils:mkdir_p(ReleaseDir),
-    Release1 = rlx_release:relfile(Release0, ReleaseFile),
-    State1 = rlx_state:update_realized_release(State0, Release1),
-
-    ReleaseSpec = rlx_release:metadata(Release1),
-
-    ok = rlx_file_utils:write_term(ReleaseFile, ReleaseSpec),
-    include_erts(State1, Release1, OutputDir, ReleaseDir),
-    {ok, State1}.
-
-%% @doc Optionally add erts directory to release, if defined.
--spec include_erts(rlx_state:t(), rlx_release:t(),  file:name(), file:name()) -> ok.
-include_erts(State, Release, OutputDir, RelDir) ->
-    Prefix = case rlx_state:include_erts(State) of
-                 false ->
-                     false;
-                 true ->
-                     code:root_dir();
-                 P ->
-                     filename:absname(P)
-    end,
-
-    case Prefix of
-        false ->
-            make_boot_script(State, Release, OutputDir, RelDir);
-        _ ->
-            ?log_debug("Including Erts from ~s", [Prefix]),
-            ErtsVersion = rlx_release:erts(Release),
-            ErtsBinDir = filename:join([Prefix, "erts-" ++ ErtsVersion, "bin"]),
-            LocalErtsBin = filename:join([OutputDir, "erts-" ++ ErtsVersion, "bin"]),
-            {OsFamily, _OsName} = rlx_util:os_type(State),
-            case rlx_file_utils:is_dir(ErtsBinDir) of
-                false ->
-                    erlang:error(?RLX_ERROR({specified_erts_does_not_exist, Prefix, ErtsVersion}));
-                true ->
-                    ok = rlx_file_utils:mkdir_p(LocalErtsBin),
-                    ok = rlx_file_utils:copy(ErtsBinDir, LocalErtsBin,
-                                             [recursive, {file_info, [mode, time]}]),
-
-                    case OsFamily of
-                        unix ->
-                            DynErl = filename:join([LocalErtsBin, "dyn_erl"]),
-                            Erl = filename:join([LocalErtsBin, "erl"]),
-                            rlx_file_utils:copy(DynErl, Erl);
-                        win32 ->
-                            DynErl = filename:join([LocalErtsBin, "dyn_erl.ini"]),
-                            Erl = filename:join([LocalErtsBin, "erl.ini"]),
-                            rlx_file_utils:copy(DynErl, Erl)
-                    end,
-
-                    %% drop yielding_c_fun binary if it exists
-                    %% it is large (1.1MB) and only used at compile time
-                    _ = rlx_file_utils:remove(filename:join([LocalErtsBin, "yielding_c_fun"])),
-
-                    make_boot_script(State, Release, OutputDir, RelDir)
-            end
-    end.
-
--spec make_boot_script(rlx_state:t(), rlx_release:t(), file:name(), file:name()) -> ok.
-make_boot_script(State, Release, OutputDir, RelDir) ->
-    Paths = [RelDir | rlx_util:get_code_paths(Release, OutputDir)],
-    Options = [{path, Paths},
-               {outdir, RelDir},
-               {variables, make_boot_script_variables(Release, State)},
-               silent | make_script_options(State)],
-    Name = atom_to_list(rlx_release:name(Release)),
-    IsRelxSasl = rlx_state:is_relx_sasl(State),
-
-    %% relx built-in form of systools exref feature
-    maybe_check_for_undefined_functions(State, Release),
-
-    case make_start_script(Name, RelDir, Options, IsRelxSasl) of
-        Result when Result =:= ok orelse (is_tuple(Result) andalso
-                                          element(1, Result) =:= ok) ->
-            maybe_print_warnings(Result),
-            ?log_debug("release start script created"),
-            create_RELEASES(State, Release, OutputDir),
-            create_no_dot_erlang(RelDir, OutputDir, Options, State),
-            create_start_clean(RelDir, OutputDir, Options, State);
-        error ->
-            ReleaseFile = filename:join([RelDir, [Name, ".rel"]]),
-            erlang:error(?RLX_ERROR({release_script_generation_error, ReleaseFile}));
-        {error, Module, Error} ->
-            erlang:error(?RLX_ERROR({release_script_generation_error, Module, Error}))
-    end.
-
 maybe_check_for_undefined_functions(State, Release) ->
     case rlx_state:check_for_undefined_functions(State) of
         true ->
@@ -410,8 +318,8 @@ add_project_apps_to_xref(Rf, [AppSpec | Rest], State) ->
                 {ok, _} ->
                     ok;
                 {error, _} = Error ->
-                    ?log_warn("Error adding application ~s to xref context: ~s",
-                              [rlx_app_info:name(App), xref:format_error(Error)])
+                    rebar_api:warn("Error adding application ~s to xref context: ~s",
+                                   [rlx_app_info:name(App), xref:format_error(Error)])
             end;
         _ ->
             ok
@@ -421,28 +329,12 @@ add_project_apps_to_xref(Rf, [AppSpec | Rest], State) ->
 format_xref_warning([]) ->
     ok;
 format_xref_warning(Warnings) ->
-    ?log_warn("There are missing function calls in the release.", []),
-    ?log_warn("Make sure all applications needed at runtime are included in the release.", []),
+    rebar_api:warn("There are missing function calls in the release.", []),
+    rebar_api:warn("Make sure all applications needed at runtime are included in the release.", []),
     lists:map(fun({{M1, F1, A1}, {M2, F2, A2}}) ->
-                      ?log_warn("~w:~tw/~w calls undefined function ~w:~tw/~w",
-                                [M1, F1, A1, M2, F2, A2])
+                      rebar_api:warn("~w:~tw/~w calls undefined function ~w:~tw/~w",
+                                     [M1, F1, A1, M2, F2, A2])
               end, Warnings).
-
-%% setup options for warnings as errors, src_tests and exref
-make_script_options(State) ->
-    IncludeSrc = include_src_or_default(State),
-    WarningsAsErrors = rlx_state:warnings_as_errors(State),
-    SrcTests = rlx_state:src_tests(State),
-    [Key || {Key, true} <- [{warnings_as_errors, WarningsAsErrors},
-                            {src_tests, SrcTests andalso IncludeSrc}]]
-        ++ case rlx_state:exref(State) of
-               true ->
-                   [exref];
-               Apps when is_list(Apps) ->
-                   [{exref, Apps}];
-               _ ->
-                   []
-           end.
 
 %% when running `release' the default is to include src so `src_tests' can do checks
 include_src_or_default(State) ->
@@ -451,143 +343,6 @@ include_src_or_default(State) ->
             true;
         IncludeSrc ->
             IncludeSrc
-    end.
-
-make_start_script(Name, RelDir, Options, IsRelxSasl) ->
-    case IsRelxSasl of
-        true ->
-            %% systools in sasl version 3.5 and above has the `script_name' option
-            systools:make_script(Name, [{script_name, "start"} | Options]);
-        false ->
-            case systools:make_script(Name, Options) of
-                Result when Result =:= ok orelse (is_tuple(Result) andalso
-                                          element(1, Result) =:= ok) ->
-                    copy_to_start(RelDir, Name),
-                    Result;
-                Error ->
-                    Error
-            end
-    end.
-
-%% systools:make_script in sasl <3.5 do not support `script_name'
-%% so the `Name.boot' file must be manually copied to `start.boot'
-copy_to_start(RelDir, Name) ->
-    BootFile = [Name, ".boot"],
-    case rlx_file_utils:copy(filename:join([RelDir, BootFile]),
-                             filename:join(RelDir, "start.boot")) of
-        ok ->
-            ok;
-        {error, Reason} ->
-            %% it isn't absolutely necesary for start.boot to exist so just warn
-            ?log_warn("Unable to copy boot file ~s to start.boot: ~p", [BootFile, Reason]),
-            ok
-    end.
-
-maybe_print_warnings({ok, Module, Warnings}) when Warnings =/= [] ->
-    FormattedWarnings = unicode:characters_to_list(Module:format_warning(Warnings)),
-    Trimmed = rlx_string:trim(FormattedWarnings, trailing, "\n"),
-    ?log_warn("Warnings generating release:~n~s", [Trimmed]);
-maybe_print_warnings(_) ->
-    ok.
-
-make_boot_script_variables(Release, State) ->
-    % A boot variable is needed when {system_libs, false} and the application
-    % directories are split between the release/lib directory and the erlang
-    % install directory on the target host.
-    % The built-in $ROOT variable points to the erts directory on Windows
-    % (dictated by erl.ini [erlang] Rootdir=) and so a boot variable is made
-    % pointing to the release directory
-    % On non-Windows, $ROOT is set by the ROOTDIR environment variable as the
-    % release directory, so a boot variable is made pointing to the erts
-    % directory.
-    % NOTE the boot variable can point to either the release/erts root directory
-    % or the release/erts lib directory, as long as the usage here matches the
-    % usage used in the start up scripts
-    case {os:type(), rlx_state:system_libs(State)} of
-        {{win32, _}, false} ->
-            [{"RELEASE_DIR", filename:join(rlx_state:base_output_dir(State),
-                                           rlx_release:name(Release))}];
-        {{win32, _}, true} ->
-            [];
-        _ ->
-            [{"SYSTEM_LIB_DIR", code:lib_dir()}]
-    end.
-
-create_no_dot_erlang(RelDir, OutputDir, Options, _State) ->
-    create_other_boot_file(RelDir, [no_dot_erlang | Options], "no_dot_erlang"),
-    copy_boot_to_bin(RelDir, OutputDir, "no_dot_erlang").
-
-create_start_clean(RelDir, _OutputDir, Options, _State) ->
-    create_other_boot_file(RelDir, Options, "start_clean").
-
-%% function for creating .boot files for no_dot_erlang and start_clean
-create_other_boot_file(RelDir, Options, Name) ->
-    case systools:make_script(Name, [{outdir, RelDir},
-                                     no_warn_sasl | Options]) of
-        Result when Result =:= ok orelse (is_tuple(Result) andalso
-                                          element(1, Result) =:= ok) ->
-            %% don't need to leave the .rel and .script for these boot files
-            rlx_file_utils:remove(filename:join([RelDir, [Name, ".rel"]])),
-            rlx_file_utils:remove(filename:join([RelDir, [Name, ".script"]]));
-        error ->
-            erlang:error(?RLX_ERROR({boot_script_generation_error, Name}));
-        {error, Module, Error} ->
-            erlang:error(?RLX_ERROR({boot_script_generation_error, Name, Module, Error}))
-    end.
-
-%% TODO: What escript is this talking about?
-%% escript requires boot files in bin/ and not under the release dir
-copy_boot_to_bin(RelDir, OutputDir, Name) ->
-    From = filename:join([RelDir, Name++".boot"]),
-    To = filename:join([OutputDir, "bin", Name++".boot"]),
-    case rlx_file_utils:copy(From, To) of
-        ok ->
-            ok;
-        {error, Reason} ->
-            erlang:error({failed_copy_boot_to_bin, From, To, Reason})
-    end.
-
-%% this file must exist for release_handler functions to work
-create_RELEASES(State, Release, OutputDir) ->
-    case rlx_state:system_libs(State) of
-        false ->
-            ?log_debug("*WARNING* Not creating RELEASES file because system libs are not included "
-                       "in the release. The RELEASES file is required before release_handler can be used "
-                       "to install a release."),
-            %% remove the RELEASES file in case it exists from a previous release build
-            _ = rlx_file_utils:remove(filename:join([OutputDir, "releases", "RELEASES"]));
-        _ ->
-            case create_RELEASES(OutputDir, Release) of
-                ok ->
-                    ok;
-                {error, Reason} ->
-                    ?log_debug("*WARNING* Creating RELEASES file failed for reason: ~p "
-                               "The RELEASES file is required before release_handler can be used "
-                               "to install a release.", [Reason]),
-                    ok
-            end
-    end.
-
-create_RELEASES(OutputDir, Release) ->
-    RelName = atom_to_list(rlx_release:name(Release)),
-    RelVsn = rlx_release:vsn(Release),
-    ErtsVsn = rlx_release:erts(Release),
-    Apps = [{Name, Vsn, filename:join("./lib", [Name, "-", Vsn])}
-            || #{name := Name,
-                 vsn := Vsn,
-                 dir := _Dir} <- rlx_release:applications(Release)],
-
-    do_write_release(filename:join(OutputDir, "releases"),
-                     {release, RelName, RelVsn, ErtsVsn, Apps, permanent}).
-
-do_write_release(Dir, Release) ->
-    case file:open(filename:join(Dir, "RELEASES"), [write,{encoding,utf8}]) of
-        {ok, Fd} ->
-            ok = io:format(Fd, "%% ~ts~n~tp.~n",
-                           [epp:encoding_to_string(utf8), [Release]]),
-            ok = file:close(Fd);
-        {error, Reason} ->
-            {error, Reason}
     end.
 
 -spec format_error(ErrorDetail::term()) -> iolist().

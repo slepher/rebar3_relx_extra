@@ -23,8 +23,7 @@
 -module(rlx_clusrel).
 
 
--export([do/3,
-         format_error/1]).
+-export([do/2, format_error/1]).
 
 -include_lib("relx/src/relx.hrl").
 
@@ -34,13 +33,14 @@
 
 %% @doc recursively dig down into the library directories specified in the state
 %% looking for OTP Applications
--spec do(term(), [], rlx_state:t()) -> {ok, rlx_state:t()} | relx:error().
-do(Release, Apps, State) ->
-    RelName = rlx_release:name(Release),
-    OutputDir = filename:join(rlx_state:base_output_dir(State), RelName),
-    case create_rel_files(State, Release, Apps, OutputDir) of
+-spec do(term(),  rlx_state:t()) -> {ok, rlx_state:t()} | relx:error().
+do(Cluster, StateExt) ->
+    State = rlx_ext_state:rlx_state(StateExt),
+    ClusName = rlx_release:name(Cluster),
+    OutputDir = filename:join(rlx_state:base_output_dir(State), ClusName),
+    case create_rel_files(State, Cluster, OutputDir) of
         {ok, State1} ->
-            sub_releases_overlay(Release, State1);
+            sub_releases_overlay(Cluster, State1);
         {error, Reason} ->
             {error, Reason}
     end.
@@ -54,27 +54,20 @@ format_error(Reason) ->
 %%%===================================================================
 %%% Internal Functions
 %%%===================================================================
-create_rel_files(State, Release0, Apps, OutputDir) ->
-    Config = rlx_release:config(Release0),
+create_rel_files(State, Cluster, OutputDir) ->
+    ClusRelease = rlx_cluster:solved_clus_release(Cluster),
     Variables = make_boot_script_variables(State, OutputDir),
-    CodePath = rlx_util:get_code_paths(Release0, OutputDir),
-    case proplists:get_value(ext, Config) of
-        undefined ->
-            {error, no_releases};
-        SubReleases ->
-            write_cluster_booter_file(Release0, OutputDir),
-            write_cluster_files(State, SubReleases, Release0, OutputDir),
-            lists:map(
-              fun({SubReleaseName, SubReleaseVsn}) ->
-                      Release = rlx_state:get_configured_release(State, SubReleaseName, SubReleaseVsn),
-                      {ok, RealizedSubRelease, _State1} =
-                          rlx_resolve:solve_release(Release, rlx_state:available_apps(State, Apps)),
-                      {release, _ErlInfo, _ErtsInfo, _Apps} = SubReleaseMeta = rlx_release:metadata(RealizedSubRelease),
-                      Resutl = write_release_files(RealizedSubRelease, SubReleaseMeta, Variables, CodePath, OutputDir),
-                      io:format("get result ~p~n", [Resutl])
-                 end, SubReleases),
-            {ok, State}
-    end.
+    CodePath = rlx_util:get_code_paths(ClusRelease, OutputDir),
+    write_cluster_booter_file(ClusRelease, OutputDir),
+
+    Releases = rlx_cluster:solved_releases(Cluster),
+    write_cluster_files(State, Releases, ClusRelease, OutputDir),
+    lists:map(
+      fun(Release) ->
+              {release, _ErlInfo, _ErtsInfo, _Apps} = SubReleaseMeta = rlx_release:metadata(Release),
+              write_release_files(Release, SubReleaseMeta, Variables, CodePath, OutputDir)
+      end, Releases),
+    {ok, State}.
 
 %% copy booter file from rebar3_relx_ext temple
 write_cluster_booter_file(Release, OutputDir) ->
@@ -125,7 +118,6 @@ sub_release_dir(Release, OutputDir) ->
 
 write_release_files(Release, ReleaseMeta, Variables, CodePath, OutputDir) ->
     SubOutputDir = sub_output_dir(Release, OutputDir),
-    io:format("sub output dir is ~s~n", [SubOutputDir]),
     SubReleaseDir = sub_release_dir(Release, OutputDir),
     ok = ec_file:mkdir_p(SubOutputDir),
     ok = ec_file:mkdir_p(SubReleaseDir),

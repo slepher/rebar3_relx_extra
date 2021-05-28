@@ -19,23 +19,11 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
-build_clusrel(RelNameOrUndefined, Apps, State) when is_atom(RelNameOrUndefined) ->
-    {RelName, RelVsn} = pick_release_version(RelNameOrUndefined, State),
-    Release = #{name => RelName,
-                vsn  => RelVsn},
-    build_clusrel_1(Release, Apps, State);
-build_clusrel({RelName, RelVsn}, Apps, State) when is_atom(RelName) ,
-                                                   is_list(RelVsn) ->
-    Release = #{name => RelName,
-                vsn => RelVsn},
-    RealizedRelease = build_clusrel_1(Release, Apps, State),
-    {ok, rlx_state:add_realized_release(State, RealizedRelease)};
-build_clusrel(Release=#{name := _RelName,
-                        vsn  := _RelVsn}, Apps, State) ->
-    RealizedRelease = build_clusrel_1(Release, Apps, State),
-    {ok, rlx_state:add_realized_release(State, RealizedRelease)};
-build_clusrel(Release, _, _) ->
-    ?RLX_ERROR({unrecognized_release, Release}).
+build_clusrel(Cluster, Apps, State) ->
+    {ok, RealizedCluster, State1} =
+        rlx_ext_resolve:solve_release(Cluster, Apps, State),
+    {ok, State2} = rlx_ext_assemble:do(RealizedCluster, State1),
+    rlx_clusrel:do(RealizedCluster, State2).
 
 build_clustar(RelNameOrUndefined, Apps, State) when is_atom(RelNameOrUndefined) ->
     {RelName, RelVsn} = pick_release_version(RelNameOrUndefined, State),
@@ -55,13 +43,6 @@ build_clustar(Release=#{name := _RelName,
 build_clustar(Release, _, _) ->
     ?RLX_ERROR({unrecognized_release, Release}).
 
-build_clusrel_1(#{name := RelName,
-                 vsn := RelVsn}, Apps, State) ->
-    Release = rlx_state:get_configured_release(State, RelName, RelVsn),
-    {ok, RealizedRelease, State1} =
-        rlx_resolve:solve_release(Release, rlx_state:available_apps(State, Apps)),
-    {ok, State2} = rlx_assemble:do(RealizedRelease, State1),
-    rlx_clusrel:do(RealizedRelease, Apps, State2).
 
 build_clustar_1(#{name := RelName,
                  vsn := RelVsn}, Apps, RelxState) ->
@@ -77,8 +58,6 @@ build_clusup(ClusterName, ClusterVsn, UpFromVsn, RelxState) ->
 
 build_clusuptar(Release, ToVsn, UpFromVsn, RelxState) ->
     RelxState.
-
-
 %%--------------------------------------------------------------------
 %% @doc
 %% @spec

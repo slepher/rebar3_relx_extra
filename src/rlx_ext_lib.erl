@@ -10,6 +10,7 @@
 -module(rlx_ext_lib).
 
 %% API
+-export([update_lastest_vsn/3]).
 -export([sub_release_state/4]).
 -export([rlx_releases/1]).
 -export([update_rlx/1]).
@@ -18,6 +19,21 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
+
+
+update_lastest_vsn(Name, Vsn, Map) ->
+    case maps:find(Name, Map) of
+        {ok, LastestVsn} ->
+            case rlx_util:parsed_vsn_lte(rlx_util:parse_vsn(LastestVsn), rlx_util:parse_vsn(Vsn)) of
+                true ->
+                    maps:put(Name, Vsn, Map);
+                false ->
+                    Map
+            end;
+        error ->
+            maps:put(Name, Vsn, Map)
+    end.
+
 sub_release_state(State, Release, ReleaseName, ReleaseVsn) ->
     Config = rlx_release:config(Release),
     InitConfig = proplists:get_value(init_config, Config),

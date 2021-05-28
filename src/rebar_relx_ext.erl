@@ -44,41 +44,29 @@ do(Provider, State) ->
                                | merge_overlays(RelxConfig)],
     Args = [include_erts, system_libs, vm_args, sys_config],
     RelxConfig2 = maybe_obey_command_args(RelxConfig1, Opts, Args),
+    RelxExtConfig = rebar_state:get(State, relx_ext, []),
+    {ok, RelxExtState} = rlx_ext_config:to_state(RelxConfig2, RelxExtConfig),
 
-    {ok, RelxState} = rlx_config:to_state(RelxConfig2),
-
-    RlxState1 = merge_relx_ext(RelxConfig, RelxState, State),
 
     Providers = rebar_state:providers(State),
     Cwd = rebar_state:dir(State),
 
     rebar_hooks:run_project_and_app_hooks(Cwd, pre, Provider, Providers, State),
 
-    Releases = releases_to_build(Provider, Opts, RelxState),
+    Clusters = clusters_to_build(Provider, Opts, RelxExtState),
 
     case Provider of
         Provider when Provider == clusup; Provider == clusuptar ->
-            {Release, ToVsn} =
-                %% hd/1 can't fail because --all is not a valid option to relup
-                case Releases of
-                    [{Rel,Vsn}|_] when is_atom(Rel) ->
-                        %% This is returned if --relvsn and --relname are given
-                        {Rel, Vsn};
-                    [undefined|_] ->
-                        erlang:error(?PRV_ERROR(unknown_release));
-                    [Rel|_] when is_atom(Rel) ->
-                        erlang:error(?PRV_ERROR(unknown_vsn))
-                end,
-
+            [{Cluster, ToVsn}|_] = Clusters,
             UpFromVsn = proplists:get_value(upfrom, Opts, undefined),
             case Provider of
                 clusup ->
-                    relx_ext:build_clusup(Release, ToVsn, UpFromVsn, RlxState1);
+                    relx_ext:build_clusup(Cluster, ToVsn, UpFromVsn, RelxExtState);
                 clusuptar ->
-                    relx_ext:build_clusuptar(Release, ToVsn, UpFromVsn, RlxState1)
+                    relx_ext:build_clusuptar(Cluster, ToVsn, UpFromVsn, RelxExtState)
             end;
         _ ->
-            parallel_run(Provider, Releases, all_apps(State), RlxState1)
+            parallel_run(Provider, Clusters, all_apps(State), RelxExtState)
     end,
 
     rebar_hooks:run_project_and_app_hooks(Cwd, post, Provider, Providers, State),
@@ -224,10 +212,17 @@ format_error({config_file, Filename, Error}) ->
 format_error(Error) ->
     io_lib:format("~p", [Error]).
 
-parallel_run(clusrel, [Release], AllApps, RelxState) ->
-    relx_ext:build_clusrel(Release, AllApps, RelxState);
-parallel_run(clustar, [Release], AllApps, RelxState) ->
-    relx_ext:build_clustar(Release, AllApps, RelxState);
+parallel_run(Provider, [{ClusName, ClusVsn}], AllApps, RelxState) ->
+    case rlx_ext_state:get_cluster(RelxState, ClusName, ClusVsn) of
+        {ok, Cluster} ->
+            parallel_run(Provider, [Cluster], AllApps, RelxState);
+        error ->
+            erlang:error(?PRV_ERROR({no_cluster_for, ClusName, ClusVsn}))
+    end;
+parallel_run(clusrel, [Cluster], AllApps, RelxState) ->
+    relx_ext:build_clusrel(Cluster, AllApps, RelxState);
+parallel_run(clustar, [Cluster], AllApps, RelxState) ->
+    relx_ext:build_clustar(Cluster, AllApps, RelxState);
 parallel_run(Provider, Releases, AllApps, RelxState) ->
     rebar_parallel:queue(Releases, fun rel_worker/2, [Provider, AllApps, RelxState], fun rel_handler/2, []).
 
@@ -254,24 +249,35 @@ rel_handler({{Name, Vsn}, Other}, _Args) ->
 rel_handler({ok, _}, _) ->
     ok.
 
-releases_to_build(Provider, Opts, RelxState)->
+clusters_to_build(Provider, Opts, RelxExtState)->
     case proplists:get_value(all, Opts, undefined) of
         undefined ->
             case proplists:get_value(relname, Opts, undefined) of
                 undefined ->
-                    [undefined];
+                    case rlx_ext_state:default_cluster(RelxExtState) of
+                        {ok, Cluster} ->
+                            [Cluster];
+                        {error, Reason} ->
+                            erlang:error(?PRV_ERROR(Reason))
+                    end;
                 R ->
+                    ClusName = list_to_atom(R),
                     case proplists:get_value(relvsn, Opts, undefined) of
                         undefined ->
-                            [list_to_atom(R)];
-                        RelVsn ->
-                            [{list_to_atom(R), RelVsn}]
+                            case rlx_ext_state:lastest_cluster(RelxExtState, ClusName) of
+                                {ok, Cluster} ->
+                                    [Cluster];
+                                {error, Reason} ->
+                                    erlang:error(?PRV_ERROR(Reason))
+                            end;
+                        ClusVsn ->
+                            [{ClusName, ClusVsn}]
                     end
             end;
-        true when Provider =:= relup ->
-            erlang:error(?PRV_ERROR(all_relup));
+        true when Provider =:= clusup; Provider =:= clusuptar ->
+            erlang:error(?PRV_ERROR(all_clusup));
         true ->
-            highest_unique_releases(rlx_state:configured_releases(RelxState))
+            maps:to_list(rlx_ext_state:lastest_clusters(RelxExtState))
     end.
 
 %% takes a map of relx configured releases and returns a list of the highest

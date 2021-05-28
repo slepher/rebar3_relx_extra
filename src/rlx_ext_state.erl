@@ -14,6 +14,11 @@
 -export([add_cluster/2]).
 -export([default_cluster/1]).
 -export([default_cluster_name/2]).
+-export([include_apps/2]).
+-export([rlx_state/1, rlx_state/2]).
+-export([get_cluster/3]).
+-export([lastest_clusters/1]).
+-export([lastest_cluster/2]).
 
 -record(state_ext, {default_cluster_name,
                     lastest_clusters = #{},
@@ -54,18 +59,51 @@ find_release(RelName, RelVsn, #state_ext{rlx_state = RlxState}) ->
     Release = rlx_state:get_configured_release(RlxState, RelName, RelVsn),
     {ok, Release}.
 
-add_cluster(#state_ext{clusters = Clusters} = RlxState, Cluster) ->
+get_cluster(#state_ext{clusters = Clusters}, ClusName, ClusVsn) ->
+    maps:find({ClusName, ClusVsn}, Clusters).
+
+rlx_state(#state_ext{rlx_state = RlxState}) ->
+    RlxState.
+
+rlx_state(#state_ext{rlx_state = RlxState} = StateExt, RlxState) ->
+    StateExt#state_ext{rlx_state = RlxState}.
+
+add_cluster(#state_ext{clusters = Clusters, lastest_clusters = LastestClusters} = RlxState, Cluster) ->
     ClusName = rlx_cluster:name(Cluster),
     ClusVsn = rlx_cluster:vsn(Cluster),
     Clusters1 = maps:put({ClusName, ClusVsn}, Cluster, Clusters),
-    RlxState#state_ext{clusters = Clusters1}.
+    LastestClusters1 = rlx_ext_lib:update_lastest_vsn(ClusName, ClusVsn, LastestClusters),
+    RlxState#state_ext{clusters = Clusters1, lastest_clusters = LastestClusters1}.
     
-default_cluster(#state_ext{default_cluster_name = ClusName, lastest_clusters = LatestClusters}) ->
-    ClusVsn = maps:get(ClusName, LatestClusters),
-    {ClusName, ClusVsn}.
+default_cluster(#state_ext{default_cluster_name = undefined, lastest_clusters = LastestClusters}) ->
+    case maps:to_list(LastestClusters) of
+        [{ClusName, ClusVsn}] ->
+            {ok, {ClusName, ClusVsn}};
+        [] ->
+            {error, no_cluster_defined};
+        _ ->
+            {error, no_default_cluster}
+    end;
+
+default_cluster(#state_ext{default_cluster_name = ClusName} = RelxExtState) ->
+    lastest_cluster(RelxExtState, ClusName).
 
 default_cluster_name(State, DefaultClusterName) ->
     State#state_ext{default_cluster_name = DefaultClusterName}.
+
+lastest_cluster(#state_ext{lastest_clusters = LastestClusters}, ClusName) ->
+    case maps:find(ClusName, LastestClusters) of
+        {ok, ClusVsn} ->
+            {ok, {ClusName, ClusVsn}};
+        error ->
+            {error, {no_cluster_for, ClusName}}
+    end.
+
+include_apps(State, IncludeApps) ->
+    State#state_ext{include_apps = IncludeApps}.
+
+lastest_clusters(#state_ext{lastest_clusters = LastestClusters}) ->
+    LastestClusters.
 
 %%%===================================================================
 %%% API

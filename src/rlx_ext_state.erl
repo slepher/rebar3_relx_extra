@@ -65,7 +65,7 @@ get_cluster(#state_ext{clusters = Clusters}, ClusName, ClusVsn) ->
 rlx_state(#state_ext{rlx_state = RlxState}) ->
     RlxState.
 
-rlx_state(#state_ext{rlx_state = RlxState} = StateExt, RlxState) ->
+rlx_state(StateExt, RlxState) ->
     StateExt#state_ext{rlx_state = RlxState}.
 
 add_cluster(#state_ext{clusters = Clusters, lastest_clusters = LastestClusters} = RlxState, Cluster) ->

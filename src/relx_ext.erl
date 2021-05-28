@@ -21,7 +21,7 @@
 %%%===================================================================
 build_clusrel(Cluster, Apps, State) ->
     {ok, RealizedCluster, State1} =
-        rlx_ext_resolve:solve_release(Cluster, Apps, State),
+        rlx_ext_resolve:solve_cluster(Cluster, Apps, State),
     {ok, State2} = rlx_ext_assemble:do(RealizedCluster, State1),
     rlx_clusrel:do(RealizedCluster, State2).
 

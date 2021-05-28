@@ -15,7 +15,7 @@
 %%% API
 %%%===================================================================
 solve_cluster(Cluster, Apps, State) ->
-    
+    io:format("apps is ~p~n", [Apps]),
     ClusRelease = rlx_cluster:clus_release(Cluster),
     RelxState0 = rlx_ext_state:rlx_state(State),
     RelxState1 = rlx_state:available_apps(RelxState0, Apps),

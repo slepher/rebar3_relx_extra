@@ -26,10 +26,10 @@ to_state(RelxConfig, RelxExtConfig) ->
             {error, Reason}
     end.
 
-load({cluster, {ClusName, ClusVsn}, Releases}, {ok, State}) ->
+load({cluster, ClusName, ClusVsn, Releases}, {ok, State}) ->
     State1 = add_cluster(ClusName, ClusVsn, Releases, [], State),
     {ok, State1};
-load({cluster, {ClusName, ClusVsn}, Releases, Config}, {ok, State}) ->
+load({cluster, ClusName, ClusVsn, Releases, Config}, {ok, State}) ->
     State1 = add_cluster(ClusName, ClusVsn, Releases, Config, State),
     {ok, State1};
 load({default_cluster, ClusName}, {ok, State}) when is_atom(ClusName) ->
@@ -60,7 +60,8 @@ format_error({invalid_term, InvalidTerm}) ->
 
 add_cluster(ClusName, ClusVsn, Releases, Config, RlxState) ->
     Cluster = rlx_cluster:new(ClusName, ClusVsn),
-    Cluster1 = 
+    Cluster1 = rlx_cluster:config(Cluster, Config),
+    Cluster2 = 
         lists:foldl(
           fun(Release, ClusAcc) ->
                   case find_release(Release, RlxState) of
@@ -69,8 +70,7 @@ add_cluster(ClusName, ClusVsn, Releases, Config, RlxState) ->
                       error ->
                           ?RLX_ERROR({cound_not_find_release, Release})
                   end
-          end, Cluster, Releases),
-    Cluster2 = rlx_cluster:config(Cluster1, Config),
+          end, Cluster1, Releases),
     rlx_ext_state:add_cluster(RlxState, Cluster2).
 
 find_release(RelName, RlxState) when is_atom(RelName) ->

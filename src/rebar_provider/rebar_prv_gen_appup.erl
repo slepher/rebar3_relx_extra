@@ -6,7 +6,7 @@
 %%% @end
 %%% Created : 27 Feb 2020 by Chen Slepher <slepheric@gmail.com>
 %%%-------------------------------------------------------------------
--module(rebar3_prv_gen_appup).
+-module(rebar_prv_gen_appup).
 
 -export([init/1, do/1, format_error/1]).
 

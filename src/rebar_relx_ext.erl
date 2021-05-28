@@ -36,7 +36,6 @@ do(Provider, State) ->
                    false ->
                        []
                end,
-
     DefaultOutputDir = filename:join(rebar_dir:base_dir(State), ?DEFAULT_RELEASE_DIR),
     RelxConfig1 = RelxMode ++ [output_dir(DefaultOutputDir, Opts),
                                {overlay_vars_values, ExtraOverlays},
@@ -46,7 +45,6 @@ do(Provider, State) ->
     RelxConfig2 = maybe_obey_command_args(RelxConfig1, Opts, Args),
     RelxExtConfig = rebar_state:get(State, relx_ext, []),
     {ok, RelxExtState} = rlx_ext_config:to_state(RelxConfig2, RelxExtConfig),
-
 
     Providers = rebar_state:providers(State),
     Cwd = rebar_state:dir(State),

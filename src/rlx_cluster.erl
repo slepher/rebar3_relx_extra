@@ -22,7 +22,8 @@
 %%%===================================================================
 new(Name, Vsn) ->
     Release = rlx_release:new(Name, Vsn),
-    #cluster{name = Name, vsn = Vsn, clus_release = Release}.
+    Release1 = rlx_release:goals(Release, []),
+    #cluster{name = Name, vsn = Vsn, clus_release = Release1}.
 
 name(#cluster{name = Name}) ->
     Name.

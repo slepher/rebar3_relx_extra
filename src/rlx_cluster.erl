@@ -11,7 +11,7 @@
 %% API
 -export([new/2, name/1, vsn/1]).
 -export([add_release/2]).
--export([config/2]).
+-export([config/1, config/2]).
 -export([releases/1, solved_releases/1, clus_release/1]).
 -export([solved_clus_release/1, solved_clus_release/3]).
 
@@ -31,10 +31,13 @@ name(#cluster{name = Name}) ->
 vsn(#cluster{vsn = Vsn}) ->
     Vsn.
 
-config(#cluster{clus_release = Release} = Cluster, Config) ->
-    Goals = proplists:get_value(incl_apps, Config, []),
-    Release1 = rlx_release:goals(Release, Goals),
-    Cluster#cluster{config = Config, clus_release = Release1}.
+config(#cluster{config = Config}) ->
+    Config.
+    
+config(#cluster{} = Cluster, Config) ->
+    Cluster#cluster{config = Config}.
+
+
 
 add_release(#cluster{clus_release = ClusRelease, releases = Releases} = Cluster, Release) ->
     ClusParsedGoals = rlx_release:goals(ClusRelease),

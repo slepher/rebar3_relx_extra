@@ -15,21 +15,32 @@
 %%% API
 %%%===================================================================
 solve_cluster(Cluster, Apps, State) ->
-    io:format("apps is ~p~n", [Apps]),
     ClusRelease = rlx_cluster:clus_release(Cluster),
-    RelxState0 = rlx_ext_state:rlx_state(State),
+    Config = rlx_cluster:config(Cluster),
+    {ok, State1} = lists:foldl(fun rlx_ext_config:load/2, {ok, State}, Config),
+    RelxState0 = rlx_ext_state:rlx_state(State1),
     RelxState1 = rlx_state:available_apps(RelxState0, Apps),
     {ok, SolvedClusRelease, RelxState2} = rlx_resolve:solve_release(ClusRelease, RelxState1),
     Releases = rlx_cluster:releases(Cluster),
+    IncludeApps = rlx_ext_state:include_apps(State1),
     SolvedRelease =
         lists:map(
           fun(Release) ->
-                  {ok, SolvedRelease, _RelxState2} = rlx_resolve:solve_release(Release, RelxState2),
+                  Goals = rlx_release:goals(Release),
+                  Goals1 = merge_application_goals(IncludeApps, Goals),
+                  Release1 = rlx_release:parsed_goals(Release, Goals1),
+                  {ok, SolvedRelease, _RelxState2} = rlx_resolve:solve_release(Release1, RelxState2),
                   SolvedRelease
           end, Releases),
     Cluster1 = rlx_cluster:solved_clus_release(Cluster, SolvedClusRelease, SolvedRelease),
-    State1 = rlx_ext_state:rlx_state(State, RelxState2),
-    {ok, Cluster1, State1}.
+    State2 = rlx_ext_state:rlx_state(State1, RelxState2),
+    {ok, Cluster1, State2}.
+
+merge_application_goals(Goals, BaseGoals) ->
+    lists:foldl(fun({Key, Goal}, Acc) ->
+                        lists:keystore(Key, 1, Acc, {Key, Goal})
+                end, BaseGoals, rlx_release:parse_goals(Goals)).
+
 
 %%--------------------------------------------------------------------
 %% @doc

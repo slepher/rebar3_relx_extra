@@ -20,30 +20,15 @@
 %%%
 %%% @doc Given a complete built release this provider assembles that release
 %%% into a release directory.
--module(rlx_prv_clusuptar).
+-module(rlx_clusuptar).
 
--behaviour(provider).
 
--export([init/1,
-         do/1,
-         format_error/1]).
+-export([do/1, format_error/1]).
 
--define(PROVIDER, clusuptar).
--define(DEPS, [resolve_release]).
-
--include_lib("relx/src/relx.hrl").
 
 %%============================================================================
 %% API
 %%============================================================================
-
--spec init(rlx_state:t()) -> {ok, rlx_state:t()}.
-init(State) ->
-    State1 = rlx_state:add_provider(State, providers:create([{name, ?PROVIDER},
-                                                             {module, ?MODULE},
-                                                             {deps, ?DEPS}])),
-
-    {ok, State1}.
 
 -spec do(rlx_state:t()) -> {ok, rlx_state:t()} | relx:error().
 do(State) ->

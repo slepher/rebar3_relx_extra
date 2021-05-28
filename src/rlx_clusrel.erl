@@ -22,10 +22,9 @@
 %%% into a release directory.
 -module(rlx_clusrel).
 
-
 -export([do/2, format_error/1]).
 
--include_lib("relx/src/relx.hrl").
+-include_lib("relx_ext.hrl").
 
 %%============================================================================
 %% API
@@ -36,7 +35,7 @@
 -spec do(term(),  rlx_state:t()) -> {ok, rlx_state:t()} | relx:error().
 do(Cluster, StateExt) ->
     State = rlx_ext_state:rlx_state(StateExt),
-    ClusName = rlx_release:name(Cluster),
+    ClusName = rlx_cluster:name(Cluster),
     OutputDir = filename:join(rlx_state:base_output_dir(State), ClusName),
     case create_rel_files(State, Cluster, OutputDir) of
         {ok, State1} ->
@@ -84,12 +83,12 @@ write_cluster_booter_file(Release, OutputDir) ->
     Target = filename:join([Bindir, ReleaseName]),
     ok = ec_file:copy(Source, Target).
 
-write_cluster_files(State, SubReleases, Release, OutputDir) ->
+write_cluster_files(State, Releases, Release, OutputDir) ->
     SubReleaseDatas = 
         lists:map(
-          fun({SubReleaseName, SubReleaseVsn}) ->
-                  sub_release_data(State, SubReleaseName, SubReleaseVsn)
-          end, SubReleases),
+          fun(SubRelease) ->
+                  sub_release_data(SubRelease)
+          end, Releases),
     {release, _ErlInfo, _ErtsInfo, Apps} = rlx_release:metadata(Release),
     Apps1 = normalize_apps(Apps),
     ReleaseName = rlx_release:name(Release),
@@ -102,10 +101,20 @@ write_cluster_files(State, SubReleases, Release, OutputDir) ->
     ok = ec_file:write_term(ReleaseFile, Meta),
     ok = ec_file:write_term(ReleaseFile1, Meta).
 
-sub_release_data(State, Name, Vsn) ->
-    SubRelease = rlx_state:get_configured_release(State, Name, Vsn),
-    Goals = rlx_release:goals(SubRelease),
-    {Name, Vsn, Goals}.
+sub_release_data(Release) ->
+    Name = rlx_release:name(Release),
+    Vsn = rlx_release:vsn(Release),
+    Goals = rlx_release:goals(Release),
+    Apps =
+        lists:foldl(fun({AppName, #{type := Type}}, Acc) -> 
+                            case lists:member(Type, [none, load]) of
+                                true ->
+                                    Acc;
+                                false ->
+                                    [AppName|Acc]
+                            end
+                    end, [], Goals),
+    {Name, Vsn, Apps}.
 
 sub_output_dir(Release, OutputDir) ->
     ReleaseName = rlx_release:name(Release),
@@ -203,23 +212,18 @@ write_rel_files(RelFilename, Meta, ReleaseDir, _OutputDir, Variables, CodePath) 
             ?RLX_ERROR({release_script_generation_error, Module, Error})
     end.
 
-sub_releases_overlay(Release, State) ->
-    Config = rlx_release:config(Release),
-    case proplists:get_value(ext, Config) of
-        undefined ->
-            {ok, State};
-        SubReleaseNames ->
-            Acc1 = 
-                lists:map(
-                  fun({SubReleaseName, SubReleaseVsn}) ->
-                          State1 = rlx_ext_lib:sub_release_state(State, Release, SubReleaseName, SubReleaseVsn),
-                          rlx_overlay:render(Release, State1)
-                  end, SubReleaseNames),
-            rebar3_relx_extra_lib:split_fails(
-              fun(_V, StateAcc) ->
-                      StateAcc
-              end, State, Acc1)
-    end.
+sub_releases_overlay(Cluster, State) ->
+    Releases = rlx_cluster:releases(Cluster),
+    Acc1 =
+        lists:map(
+          fun(Release) ->
+                  {ok, SolvedRelease, State1} = rlx_resolve:solve_release(Release, State),
+                  rlx_overlay:render(SolvedRelease, State1)
+          end, Releases),
+    rebar3_relx_extra_lib:split_fails(
+      fun(_V, StateAcc) ->
+              StateAcc
+      end, State, Acc1).
 
 apps_load(Apps) ->
     lists:map(

@@ -2,11 +2,12 @@
 
 -export([do/2, format_error/1]).
 
--include_lib("relx/src/relx.hrl").
--include_lib("relx/src/rlx_log.hrl").
+-include("relx_ext.hrl").
 -include_lib("kernel/include/file.hrl").
 
-do(Release, State) ->
+do(Cluster, ExtState) ->
+    Release = rlx_cluster:solved_clus_release(Cluster),
+    State = rlx_ext_state:rlx_state(ExtState),
     RelName = rlx_release:name(Release),
     rebar_api:info("Assembling release ~p-~s...", [RelName, rlx_release:vsn(Release)]),
     OutputDir = filename:join(rlx_state:base_output_dir(State), RelName),
@@ -14,6 +15,7 @@ do(Release, State) ->
     ok = create_output_dir(OutputDir),
     ok = copy_app_directories_to_output(Release, OutputDir, State),
 
+    ExtState1 = rlx_ext_state:rlx_state(ExtState, State),
     %% relx built-in form of systools exref feature
     maybe_check_for_undefined_functions(State, Release),
 
@@ -41,7 +43,7 @@ do(Release, State) ->
                 ],
             try beam_lib:strip_release(OutputDir) of
                 {ok, _} ->
-                    {ok, State};
+                    {ok, ExtState1};
                 {error, _, Reason} ->
                     erlang:error(?RLX_ERROR({strip_release, Reason}))
             after
@@ -50,7 +52,7 @@ do(Release, State) ->
                     || {File, OrigMode} <- ModeChangedFiles ]
             end;
         false ->
-            {ok, State}
+            {ok, ExtState1}
     end.
 
 %% internal functions
@@ -295,7 +297,7 @@ maybe_check_for_undefined_functions_(State, Release) ->
                 {ok, Warnings} ->
                     format_xref_warning(Warnings);
                 {error, _} = Error ->
-                    ?log_warn(
+                    rebar_api:warn(
                         "Error running xref analyze: ~s", 
                         [xref:format_error(Error)])
             end

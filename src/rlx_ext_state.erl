@@ -14,7 +14,7 @@
 -export([add_cluster/2]).
 -export([default_cluster/1]).
 -export([default_cluster_name/2]).
--export([include_apps/2]).
+-export([include_apps/1, include_apps/2]).
 -export([rlx_state/1, rlx_state/2]).
 -export([get_cluster/3]).
 -export([lastest_clusters/1]).
@@ -98,6 +98,9 @@ lastest_cluster(#state_ext{lastest_clusters = LastestClusters}, ClusName) ->
         error ->
             {error, {no_cluster_for, ClusName}}
     end.
+
+include_apps(#state_ext{include_apps = IncludeApps}) ->
+    IncludeApps.
 
 include_apps(State, IncludeApps) ->
     State#state_ext{include_apps = IncludeApps}.

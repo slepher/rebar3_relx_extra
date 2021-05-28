@@ -24,14 +24,11 @@
 
 -export([do/4, format_error/1]).
 
--include_lib("relx/src/relx.hrl").
--include_lib("relx/src/rlx_log.hrl").
+-include("relx_ext.hrl").
 
 %%============================================================================
 %% API
 %%============================================================================
-
-
 -spec do(atom(), string(), string(), rlx_state:t()) -> {ok, rlx_state:t()} | relx:error().
 do(ClusterName, ClusterVsn, FromVsn, State) ->
     Dir = rlx_state:base_output_dir(State),
@@ -168,16 +165,16 @@ make_upfrom_script(ClusterName, RelName, RelVsn, UpFromVsn, State) ->
               % end,
     CurrentRel = strip_dot_rel(find_rel_file(RelName, RelVsn, ClientDir)),
     UpFromRel =  strip_dot_rel(find_rel_file(RelName, UpFromVsn, ClientDir)),
-    %% ?log_debug("systools:make_relup(~p, ~p, ~p, ~p)", [CurrentRel, UpFromRel, UpFromRel, Options]),
+    %% rebar_api:debug("systools:make_relup(~p, ~p, ~p, ~p)", [CurrentRel, UpFromRel, UpFromRel, Options]),
     case systools:make_relup(CurrentRel, [UpFromRel], [UpFromRel], Options) of
         ok ->
-            ?log_info("relup from ~s to ~s successfully created!~n", [UpFromRel, CurrentRel]),
+            rebar_api:info("relup from ~s to ~s successfully created!~n", [UpFromRel, CurrentRel]),
             {ok, State};
         error ->
             erlang:error(?RLX_ERROR({relup_generation_error, CurrentRel, UpFromRel}));
         {ok, RelUp, _, []} ->
             write_relup_file(RelName, RelVsn, RelUp, ClientDir),
-            ?log_info("relup ~p from ~s to ~s successfully created!~n", [RelName, UpFromVsn, RelVsn]),
+            rebar_api:info("relup ~p from ~s to ~s successfully created!~n", [RelName, UpFromVsn, RelVsn]),
             {ok, State};
         {ok, RelUp, Module, Warnings} ->
             case WarningsAsErrors of
@@ -189,7 +186,7 @@ make_upfrom_script(ClusterName, RelName, RelVsn, UpFromVsn, State) ->
                     ?RLX_ERROR({relup_script_generation_warn, Module, Warnings});
                 false ->
                     write_relup_file(RelName, RelVsn, RelUp, ClientDir),
-                    ?log_warn(format_error({relup_script_generation_warn, Module, Warnings})),
+                    rebar_api:warn(format_error({relup_script_generation_warn, Module, Warnings}), []),
                     {ok, State}
             end;
         {error,Module,Errors} ->

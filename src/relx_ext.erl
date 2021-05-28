@@ -8,7 +8,7 @@
 %%%-------------------------------------------------------------------
 -module(relx_ext).
 
--include_lib("relx/src/relx.hrl").
+-include("relx_ext.hrl").
 
 %% API
 -export([build_clusrel/3, build_clustar/3]).
@@ -22,7 +22,7 @@
 build_clusrel(Cluster, Apps, State) ->
     {ok, RealizedCluster, State1} =
         rlx_ext_resolve:solve_cluster(Cluster, Apps, State),
-    {ok, State2} = rlx_ext_assemble:do(RealizedCluster, State1),
+    {ok, State2} = rlx_app_assemble:do(RealizedCluster, State1),
     rlx_clusrel:do(RealizedCluster, State2).
 
 build_clustar(RelNameOrUndefined, Apps, State) when is_atom(RelNameOrUndefined) ->

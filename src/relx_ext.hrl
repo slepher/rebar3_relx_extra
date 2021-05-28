@@ -1,0 +1,1 @@
+-define(RLX_ERROR(Reason), {error, {?MODULE, Reason}}).

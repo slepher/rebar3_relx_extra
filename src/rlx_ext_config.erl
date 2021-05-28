@@ -8,7 +8,7 @@
 %%%-------------------------------------------------------------------
 -module(rlx_ext_config).
 
--include_lib("relx/src/relx.hrl").
+-include("relx_ext.hrl").
 
 %% API
 -export([to_state/2]).

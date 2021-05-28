@@ -20,9 +20,6 @@
 %% ===================================================================
 -spec do(atom(), rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
 do(Provider, State) ->
-    dbg:tracer(),
-    dbg:tpl(rlx_release, realize, cx),
-    dbg:p(all, [c]),
     {Opts, _} = rebar_state:command_parsed_args(State),
     RelxConfig = read_relx_config(State, Opts),
 
@@ -99,104 +96,6 @@ read_relx_config(State, Options) ->
                     erlang:error(?PRV_ERROR({config_file, ConfigFile, Reason}))
             end
     end.
-
-merge_relx_ext(Relx, RelxState, State) ->
-    RelxExtConfig = rebar_state:get(State, relx_ext, []),
-    RlxReleaseMap = rlx_releases(RelxState),
-    lists:foldl(
-      fun({release, {ReleaseName, ReleaseVsn}, SubReleases}, RelxStateAcc) ->
-              case release(ReleaseName, ReleaseVsn, SubReleases, [], RlxReleaseMap, Relx, RelxStateAcc) of
-                  {ok, RelxStateAcc1} ->
-                      RelxStateAcc1;
-                  {error, Reason} ->
-                      erlang:error(?PRV_ERROR({invalid_release, ReleaseName, ReleaseVsn, Reason})),
-                      RelxStateAcc
-              end;
-         ({release, {ReleaseName, ReleaseVsn}, SubReleases, Config}, RelxStateAcc) ->
-              case release(ReleaseName, ReleaseVsn, SubReleases, Config, RlxReleaseMap, Relx, RelxStateAcc) of
-                  {ok, RelxStateAcc1} ->
-                      RelxStateAcc1;
-                  {error, Reason} ->
-                      erlang:error(?PRV_ERROR({invalid_release, ReleaseName, ReleaseVsn, Reason})),
-                      RelxStateAcc
-              end;
-         (_Other, Acc) ->
-              Acc
-      end, RelxState, RelxExtConfig).
-
-release(ReleaseName, ReleaseVsn, SubReleases, Config, RlxReleaseMap, Relx, RelxState) ->
-    Result = 
-        lists:map(
-          fun(SubReleaseName) when is_atom(SubReleaseName) ->
-                  case get_last_release(SubReleaseName, RlxReleaseMap) of
-                      {ok, SubReleaseVsn} ->
-                          goals(SubReleaseName, SubReleaseVsn, RelxState);
-                      {error, Reason} ->
-                          {error, Reason}
-                  end;
-             ({SubReleaseName, SubReleaseVsn}) when is_atom(SubReleaseName) ->
-                  goals(SubReleaseName, SubReleaseVsn, RelxState);
-             (SubRelease) ->
-                  {error, {invalid_sub_release, SubRelease}}
-          end, SubReleases),
-    case rebar3_relx_extra_lib:split_fails(
-           fun({SubReleaseName, SubRelaseVsn, SubGoals}, {SubReleasesAcc, GoalsAcc}) ->
-                   GoalsAcc1 = ordsets:union(ordsets:from_list(SubGoals), GoalsAcc),
-                   SubReleasesAcc1 = [{SubReleaseName, SubRelaseVsn}|SubReleasesAcc],
-                   {SubReleasesAcc1, GoalsAcc1}
-           end, {[], ordsets:new()}, Result) of
-        {ok, {SubReleases1, Goals}} ->
-            InitConfig = 
-                lists:map(
-                  fun({Key, _}) ->
-                          {Key, proplists:get_value(Key, Relx)}
-                  end, Config),
-            add_release_config(
-              ReleaseName, ReleaseVsn, Goals, [{ext, SubReleases1}, {init_config, InitConfig}|Config], RelxState);
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
-add_release_config(ReleaseName, ReleaseVsn, Goals, Config, RlxState) ->
-    Release0 = rlx_release:new(ReleaseName, ReleaseVsn),
-    Release1 = rlx_release:parsed_goals(Release0, Goals),
-    Release2 = rlx_release:config(Release1, Config),
-    {ok, rlx_state:add_configured_release(RlxState, Release2)}.
-
-get_last_release(SubReleaseName, RlxReleaseMap) ->
-   case maps:find(SubReleaseName, RlxReleaseMap) of
-       {ok, [ReleaseVsn|_T]} ->
-           {ok, ReleaseVsn};
-       error ->
-           {error, {no_subrelease, SubReleaseName}}
-   end.
-
-goals(ReleaseName, ReleaseVsn, RelxState) ->
-    try rlx_state:get_configured_release(RelxState, ReleaseName, ReleaseVsn) of
-        Release ->
-            {ok, {ReleaseName, ReleaseVsn, rlx_release:goals(Release)}}
-    catch
-        _:not_found ->
-            {error, {ReleaseName, ReleaseVsn, not_found}}
-    end.
-
-rlx_releases(State) ->
-    Releases = rlx_state:configured_releases(State),
-    RelVsns = maps:keys(Releases),
-    RlxReleaseMap = 
-        lists:foldl(
-          fun({ReleaseName, ReleaseVsn}, Acc) ->
-                  ReleaseVsns = maps:get(ReleaseName, Acc, []),
-                  ReleaseVsns1 = [ReleaseVsn|ReleaseVsns],
-                  maps:put(ReleaseName, ReleaseVsns1, Acc)
-          end, maps:new(), RelVsns),
-    maps:map(
-      fun(_ReleaseName, ReleaseVsns) ->
-              lists:sort(
-                fun(R1, R2) ->
-                        ec_semver:gte(R1, R2)
-                end, ReleaseVsns)
-      end, RlxReleaseMap).
 
 -spec format_error(any()) -> iolist().
 format_error(unknown_release) ->
@@ -277,26 +176,6 @@ clusters_to_build(Provider, Opts, RelxExtState)->
         true ->
             maps:to_list(rlx_ext_state:lastest_clusters(RelxExtState))
     end.
-
-%% takes a map of relx configured releases and returns a list of the highest
-%% version for each unique release name
--spec highest_unique_releases(rlx_state:releases()) -> [{atom(), string() | undefined}].
-highest_unique_releases(Releases) ->
-    Unique = maps:fold(fun({Name, Vsn}, _, Acc) ->
-                               update_map_if_higher(Name, Vsn, Acc)
-                       end, #{}, Releases),
-    maps:to_list(Unique).
-
-update_map_if_higher(Name, Vsn, Acc) ->
-    maps:update_with(Name, fun(Vsn1) ->
-                                   case rlx_util:parsed_vsn_lte(rlx_util:parse_vsn(Vsn1),
-                                                                rlx_util:parse_vsn(Vsn)) of
-                                       true ->
-                                           Vsn;
-                                       false ->
-                                           Vsn1
-                                   end
-                           end, Vsn, Acc).
 
 %% Don't override output_dir if the user passed one on the command line
 output_dir(DefaultOutputDir, Options) ->

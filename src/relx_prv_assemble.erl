@@ -1,4 +1,4 @@
--module(rlx_app_assemble).
+-module(relx_prv_assemble).
 
 -export([do/2, format_error/1]).
 
@@ -6,8 +6,8 @@
 -include_lib("kernel/include/file.hrl").
 
 do(Cluster, ExtState) ->
-    Release = rlx_cluster:solved_clus_release(Cluster),
-    State = rlx_ext_state:rlx_state(ExtState),
+    Release = relx_ext_cluster:solved_clus_release(Cluster),
+    State = relx_ext_state:rlx_state(ExtState),
     RelName = rlx_release:name(Release),
     rebar_api:info("Assembling release ~p-~s...", [RelName, rlx_release:vsn(Release)]),
     OutputDir = filename:join(rlx_state:base_output_dir(State), RelName),
@@ -15,7 +15,7 @@ do(Cluster, ExtState) ->
     ok = create_output_dir(OutputDir),
     ok = copy_app_directories_to_output(Release, OutputDir, State),
 
-    ExtState1 = rlx_ext_state:rlx_state(ExtState, State),
+    ExtState1 = relx_ext_state:rlx_state(ExtState, State),
     %% relx built-in form of systools exref feature
     maybe_check_for_undefined_functions(State, Release),
 

@@ -20,7 +20,7 @@
 %%%
 %%% @doc Given a complete built release this provider assembles that release
 %%% into a release directory.
--module(rlx_clustar).
+-module(relx_prv_clustar).
 
 -export([do/2,
          format_error/1]).
@@ -29,27 +29,27 @@
 %% API
 %%============================================================================
 do(Cluster, State) ->
-    RelxState = rlx_ext_state:rlx_state(State),
-    ClusName = rlx_cluster:name(Cluster),
+    RelxState = relx_ext_state:rlx_state(State),
+    ClusName = relx_ext_cluster:name(Cluster),
     BaseOutputDir = rlx_state:base_output_dir(RelxState),
     OutputDir = filename:join(BaseOutputDir, ClusName),
-    Releases = rlx_cluster:solved_releases(Cluster),
+    Releases = relx_ext_cluster:solved_releases(Cluster),
     make_tar(State, Cluster, Releases, OutputDir).
 
 make_tar(State, Cluster, SubReleases, OutputDir) ->
-    Name = rlx_cluster:name(Cluster),
-    Vsn = rlx_cluster:vsn(Cluster),
+    Name = relx_ext_cluster:name(Cluster),
+    Vsn = relx_ext_cluster:vsn(Cluster),
     TarFile = filename:join(OutputDir, atom_to_list(Name) ++ "_" ++ Vsn ++ ".tar.gz"),
-    RlxState = rlx_ext_state:rlx_state(State),
+    RlxState = relx_ext_state:rlx_state(State),
     Files = tar_files(RlxState, Cluster, SubReleases, OutputDir),
     ok = erl_tar:create(TarFile, Files, [dereference,compressed]),
     rebar_api:info("tarball ~s successfully created!~n", [TarFile]),
     {ok, State}.
     
 tar_files(State, Cluster, SubReleases, OutputDir) ->
-    Name = rlx_cluster:name(Cluster),
-    Vsn = rlx_cluster:vsn(Cluster),
-    Release = rlx_cluster:solved_clus_release(Cluster),
+    Name = relx_ext_cluster:name(Cluster),
+    Vsn = relx_ext_cluster:vsn(Cluster),
+    Release = relx_ext_cluster:solved_clus_release(Cluster),
     Applications = rlx_release:applications(Release),
     ErtsVsn = rlx_release:erts(Release),
     Paths = paths(State, OutputDir),
@@ -58,7 +58,7 @@ tar_files(State, Cluster, SubReleases, OutputDir) ->
         lists:foldl(
           fun({AppName, AppVsn}, Acc) ->
                   {ok, ApplicationFiles} = 
-                      rlx_ext_application_lib:application_files(
+                      relx_ext_lib:application_files(
                         AppName, AppVsn, Paths, [{dirs, [include | maybe_src_dirs(State)]}, {output_dir, OutputDir}]),
                   ApplicationFiles ++ Acc
           end, [], Applications1),
@@ -75,7 +75,7 @@ tar_files(State, Cluster, SubReleases, OutputDir) ->
 
 paths(State, OutputDir) ->
     SystemLibs = rlx_state:system_libs(State),
-    Paths = rlx_ext_application_lib:path([{path, [filename:join([OutputDir, "lib", "*", "ebin"])]}]),
+    Paths = relx_ext_lib:path([{path, [filename:join([OutputDir, "lib", "*", "ebin"])]}]),
         case SystemLibs of
             true ->
                 Paths;

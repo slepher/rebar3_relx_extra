@@ -6,7 +6,7 @@
 %%% @end
 %%% Created : 27 May 2021 by Chen Slepher <slepheric@gmail.com>
 %%%-------------------------------------------------------------------
--module(rlx_cluster).
+-module(relx_ext_cluster).
 
 %% API
 -export([new/2, name/1, vsn/1]).
@@ -36,8 +36,6 @@ config(#cluster{config = Config}) ->
     
 config(#cluster{} = Cluster, Config) ->
     Cluster#cluster{config = Config}.
-
-
 
 add_release(#cluster{clus_release = ClusRelease, releases = Releases} = Cluster, Release) ->
     ClusParsedGoals = rlx_release:goals(ClusRelease),

@@ -47,7 +47,7 @@ do(State) ->
     rebar_api:debug("opts: ~p", [Opts]),
     Name = rebar3_appup_utils:get_release_name(State),
     rebar_api:debug("release name: ~p", [Name]),
-    CurrentRelPath = rebar3_appup_generate_lib:get_current_rel_path(State, Name),
+    CurrentRelPath = rebar_appup_lib:get_current_rel_path(State, Name),
     {CurrentName, CurrentVer} = get_clus_release_info(Name, CurrentRelPath),
     rebar_api:debug("current release, name: ~p, version: ~p", [CurrentName, CurrentVer]),
     PreviousRelPath = case proplists:get_value(previous, Opts, undefined) of
@@ -64,7 +64,7 @@ do(State) ->
     %% if a specific one was requested use that instead
     PreviousVer = case proplists:get_value(upfrom, Opts, undefined) of
                       undefined ->
-                          rebar3_appup_generate_lib:deduce_previous_version(
+                          rebar_appup_lib:deduce_previous_version(
                             Name, CurrentVer,CurrentRelPath, PreviousRelPath);
                       V -> V
                   end,
@@ -81,11 +81,11 @@ do(State) ->
 
     %% Find all the apps that have been upgraded
     {AddApps0, UpgradeApps0, RemoveApps} = 
-        rebar3_appup_generate_lib:get_apps(
+        rebar_appup_lib:get_apps(
           Name, PreviousRelPath, PreviousVer,
           CurrentRelPath, CurrentVer, State),
     
-    rebar3_appup_generate_lib:generate_appups(
+    rebar_appup_lib:generate_appups(
       CurrentRelPath, PreviousRelPath,  TargetDir, CurrentVer, Opts, AddApps0, UpgradeApps0, RemoveApps, State),
     {ok, State}.
 

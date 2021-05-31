@@ -23,7 +23,7 @@
 %% this file is from https://github.com/lrascao/rebar3_appup_plugin/blob/develop/src/rebar3_appup_generate.erl 
 %% delete non related functions and exported some new functions.
 
--module(rebar3_appup_generate_lib).
+-module(rebar_appup_lib).
 
 %% exported for eunit
 -export([matching_versions/2,

@@ -20,7 +20,7 @@
 %%%
 %%% @doc Given a complete built release this provider assembles that release
 %%% into a release directory.
--module(rlx_clusrel).
+-module(relx_prv_clusrel).
 
 -export([do/2, format_error/1]).
 
@@ -34,8 +34,8 @@
 %% looking for OTP Applications
 -spec do(term(),  rlx_state:t()) -> {ok, rlx_state:t()} | relx:error().
 do(Cluster, StateExt) ->
-    State = rlx_ext_state:rlx_state(StateExt),
-    ClusName = rlx_cluster:name(Cluster),
+    State = relx_ext_state:rlx_state(StateExt),
+    ClusName = relx_ext_cluster:name(Cluster),
     OutputDir = filename:join(rlx_state:base_output_dir(State), ClusName),
     case create_rel_files(State, Cluster, OutputDir) of
         {ok, State1} ->
@@ -54,12 +54,12 @@ format_error(Reason) ->
 %%% Internal Functions
 %%%===================================================================
 create_rel_files(State, Cluster, OutputDir) ->
-    ClusRelease = rlx_cluster:solved_clus_release(Cluster),
+    ClusRelease = relx_ext_cluster:solved_clus_release(Cluster),
     Variables = make_boot_script_variables(State, OutputDir),
     CodePath = rlx_util:get_code_paths(ClusRelease, OutputDir),
     write_cluster_booter_file(ClusRelease, OutputDir),
 
-    Releases = rlx_cluster:solved_releases(Cluster),
+    Releases = relx_ext_cluster:solved_releases(Cluster),
     write_cluster_files(State, Releases, ClusRelease, OutputDir),
     lists:map(
       fun(Release) ->
@@ -214,14 +214,14 @@ write_rel_files(RelFilename, Meta, ReleaseDir, _OutputDir, Variables, CodePath) 
     end.
 
 sub_releases_overlay(Cluster, State) ->
-    Releases = rlx_cluster:releases(Cluster),
+    Releases = relx_ext_cluster:releases(Cluster),
     Acc1 =
         lists:map(
           fun(Release) ->
                   {ok, SolvedRelease, State1} = rlx_resolve:solve_release(Release, State),
                   rlx_overlay:render(SolvedRelease, State1)
           end, Releases),
-    rebar3_relx_extra_lib:split_fails(
+    relx_ext_lib:split_fails(
       fun(_V, StateAcc) ->
               StateAcc
       end, State, Acc1).

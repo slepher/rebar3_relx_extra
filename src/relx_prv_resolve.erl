@@ -6,24 +6,24 @@
 %%% @end
 %%% Created : 28 May 2021 by Chen Slepher <slepheric@gmail.com>
 %%%-------------------------------------------------------------------
--module(rlx_ext_resolve).
+-module(relx_prv_resolve).
 
 %% API
--export([solve_cluster/3]).
+-export([do/3]).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
-solve_cluster(Cluster, Apps, State) ->
-    ClusRelease = rlx_cluster:clus_release(Cluster),
-    Config = rlx_cluster:config(Cluster),
-    {ok, State1} = lists:foldl(fun rlx_ext_config:load/2, {ok, State}, Config),
-    RelxState0 = rlx_ext_state:rlx_state(State1),
+do(Cluster, Apps, State) ->
+    ClusRelease = relx_ext_cluster:clus_release(Cluster),
+    Config = relx_ext_cluster:config(Cluster),
+    {ok, State1} = lists:foldl(fun relx_ext_config:load/2, {ok, State}, Config),
+    RelxState0 = relx_ext_state:rlx_state(State1),
     RelxState1 = rlx_state:available_apps(RelxState0, Apps),
     
     {ok, SolvedClusRelease, RelxState2} = rlx_resolve:solve_release(ClusRelease, RelxState1),
-    Releases = rlx_cluster:releases(Cluster),
-    IncludeApps = rlx_ext_state:include_apps(State1),
+    Releases = relx_ext_cluster:releases(Cluster),
+    IncludeApps = relx_ext_state:include_apps(State1),
     SolvedRelease =
         lists:map(
           fun(Release) ->
@@ -33,8 +33,8 @@ solve_cluster(Cluster, Apps, State) ->
                   {ok, SolvedRelease, _RelxState2} = rlx_resolve:solve_release(Release1, RelxState2),
                   SolvedRelease
           end, Releases),
-    Cluster1 = rlx_cluster:solved_clus_release(Cluster, SolvedClusRelease, SolvedRelease),
-    State2 = rlx_ext_state:rlx_state(State1, RelxState2),
+    Cluster1 = relx_ext_cluster:solved_clus_release(Cluster, SolvedClusRelease, SolvedRelease),
+    State2 = relx_ext_state:rlx_state(State1, RelxState2),
     {ok, Cluster1, State2}.
 
 merge_application_goals(Goals, BaseGoals) ->

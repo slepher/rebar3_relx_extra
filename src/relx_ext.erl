@@ -21,21 +21,21 @@
 %%%===================================================================
 build_clusrel(Cluster, Apps, State) ->
     {ok, RealizedCluster, State1} =
-        rlx_ext_resolve:solve_cluster(Cluster, Apps, State),
-    {ok, State2} = rlx_app_assemble:do(RealizedCluster, State1),
-    rlx_clusrel:do(RealizedCluster, State2).
+        relx_prv_resolve:do(Cluster, Apps, State),
+    {ok, State2} = relx_prv_assemble:do(RealizedCluster, State1),
+    relx_prv_clusrel:do(RealizedCluster, State2).
 
 build_clustar(Cluster, Apps, State) ->
     {ok, RealizedCluster, State1} =
-        rlx_ext_resolve:solve_cluster(Cluster, Apps, State),
-    rlx_clustar:do(RealizedCluster, State1).
+        relx_prv_resolve:do(Cluster, Apps, State),
+    relx_prv_clustar:do(RealizedCluster, State1).
 
 build_clusup(ClusterName, ClusterVsn, UpFromVsn, RelxState) ->
-    rlx_clusup:do(ClusterName, ClusterVsn, UpFromVsn, RelxState),
+    relx_prv_clusup:do(ClusterName, ClusterVsn, UpFromVsn, RelxState),
     RelxState.
 
 build_clusuptar(ClusterName, ClusterVsn, UpFromVsn, RelxState) ->
-    rlx_clusuptar:do(ClusterName, ClusterVsn, UpFromVsn, RelxState),
+    relx_prv_clusuptar:do(ClusterName, ClusterVsn, UpFromVsn, RelxState),
     RelxState.
 %%--------------------------------------------------------------------
 %% @doc

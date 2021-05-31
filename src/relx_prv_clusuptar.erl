@@ -20,8 +20,7 @@
 %%%
 %%% @doc Given a complete built release this provider assembles that release
 %%% into a release directory.
--module(rlx_clusuptar).
-
+-module(relx_prv_clusuptar).
 
 -export([do/4, format_error/1]).
 
@@ -29,7 +28,7 @@
 %% API
 %%============================================================================
 do(ClusName, ClusVsn, UpFromVsn, State) ->
-    RelxState = rlx_ext_state:rlx_state(State),
+    RelxState = relx_ext_state:rlx_state(State),
     Dir = rlx_state:base_output_dir(RelxState),
     OutputDir = filename:join(Dir, ClusName),
     case diff_applications(OutputDir, ClusName, ClusVsn, UpFromVsn) of
@@ -84,12 +83,13 @@ diff_releases(OutputDir, Clusname, ClusVsn, FromVsn) ->
         {error, Reason} ->
             {error, Reason}
     end.
+
 application_files(Applications, OutputDir, State) ->
     Paths = paths(State, OutputDir),
     lists:foldl(
       fun({AppName, AppVsn}, Acc) ->
               {ok, ApplicationFiles} = 
-                      rlx_ext_application_lib:application_files(
+                      relx_ext_lib:application_files(
                         AppName, AppVsn, Paths, [{dirs, [include | maybe_src_dirs(State)]}, {output_dir, OutputDir}]),
                   ApplicationFiles ++ Acc
           end, [], Applications).
@@ -130,7 +130,7 @@ get_apps(Relfile) ->
 
 paths(State, OutputDir) ->
     SystemLibs = rlx_state:system_libs(State),
-    Paths = rlx_ext_application_lib:path([{path, [filename:join([OutputDir, "lib", "*", "ebin"])]}]),
+    Paths = relx_ext_lib:path([{path, [filename:join([OutputDir, "lib", "*", "ebin"])]}]),
         case SystemLibs of
             true ->
                 Paths;

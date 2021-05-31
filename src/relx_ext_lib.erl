@@ -1,24 +1,56 @@
 %%%-------------------------------------------------------------------
 %%% @author Chen Slepher <slepheric@gmail.com>
-%%% @copyright (C) 2020, Chen Slepher
+%%% @copyright (C) 2019, Chen Slepher
 %%% @doc
 %%%
 %%% @end
-%%% Created : 21 Jan 2020 by Chen Slepher <slepheric@gmail.com>
+%%% Created : 28 Feb 2019 by Chen Slepher <slepheric@gmail.com>
 %%%-------------------------------------------------------------------
--module(rlx_ext_application_lib).
+-module(relx_ext_lib).
 
 -include_lib("sasl/src/systools.hrl").
 -include_lib("kernel/include/file.hrl").
 
+
 %% API
+-export([update_lastest_vsn/3]).
+-export([split_fails/3]).
 -export([path/0, path/1]).
 -export([application_files/3, application_files/4]).
 -export([add_file/4]).
-
 %%%===================================================================
 %%% API
 %%%===================================================================
+update_lastest_vsn(Name, Vsn, Map) ->
+    case maps:find(Name, Map) of
+        {ok, LastestVsn} ->
+            case rlx_util:parsed_vsn_lte(rlx_util:parse_vsn(LastestVsn), rlx_util:parse_vsn(Vsn)) of
+                true ->
+                    maps:put(Name, Vsn, Map);
+                false ->
+                    Map
+            end;
+        error ->
+            maps:put(Name, Vsn, Map)
+    end.
+
+split_fails(F, Init, Values) ->
+    {Succs, Fails} = 
+        lists:foldl(
+          fun({ok, Value}, {Acc, FailsAcc}) ->
+                  {F(Value, Acc), FailsAcc};
+             (ok, {Acc, FailsAcc}) ->
+                  {F(ok, Acc), FailsAcc};
+             ({error, Reason}, {Acc, FailsAcc}) ->
+                  {Acc, [Reason|FailsAcc]}
+          end, {Init, []}, Values),
+    case Fails of
+        [] ->
+            {ok, Succs};
+        Fails ->
+            {error, Fails}
+    end.
+
 path() ->
     path([]).
 

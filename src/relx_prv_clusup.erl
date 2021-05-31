@@ -20,7 +20,7 @@
 %%%
 %%% @doc Given a complete built release this provider assembles that release
 %%% into a release directory.
--module(rlx_clusup).
+-module(relx_prv_clusup).
 
 -export([do/4, format_error/1]).
 
@@ -31,7 +31,7 @@
 %%============================================================================
 -spec do(atom(), string(), string(), rlx_state:t()) -> {ok, rlx_state:t()} | relx:error().
 do(ClusterName, ClusterVsn, FromVsn, State) ->
-    RelxState = rlx_ext_state:rlx_state(State),
+    RelxState = relx_ext_state:rlx_state(State),
     Dir = rlx_state:base_output_dir(RelxState),
     OutputDir = filename:join(Dir, atom_to_list(ClusterName)),
     case resolve_cluster(find_cluster_file(ClusterName, ClusterVsn, Dir)) of

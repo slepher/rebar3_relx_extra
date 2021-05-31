@@ -6,7 +6,7 @@
 %%% @end
 %%% Created : 27 May 2021 by Chen Slepher <slepheric@gmail.com>
 %%%-------------------------------------------------------------------
--module(rlx_ext_state).
+-module(relx_ext_state).
 
 %% API
 -export([new/1]).
@@ -69,10 +69,10 @@ rlx_state(StateExt, RlxState) ->
     StateExt#state_ext{rlx_state = RlxState}.
 
 add_cluster(#state_ext{clusters = Clusters, lastest_clusters = LastestClusters} = RlxState, Cluster) ->
-    ClusName = rlx_cluster:name(Cluster),
-    ClusVsn = rlx_cluster:vsn(Cluster),
+    ClusName = relx_ext_cluster:name(Cluster),
+    ClusVsn = relx_ext_cluster:vsn(Cluster),
     Clusters1 = maps:put({ClusName, ClusVsn}, Cluster, Clusters),
-    LastestClusters1 = rlx_ext_lib:update_lastest_vsn(ClusName, ClusVsn, LastestClusters),
+    LastestClusters1 = relx_ext_lib:update_lastest_vsn(ClusName, ClusVsn, LastestClusters),
     RlxState#state_ext{clusters = Clusters1, lastest_clusters = LastestClusters1}.
     
 default_cluster(#state_ext{default_cluster_name = undefined, lastest_clusters = LastestClusters}) ->

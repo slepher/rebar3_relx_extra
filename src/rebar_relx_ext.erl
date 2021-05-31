@@ -41,7 +41,7 @@ do(Provider, State) ->
     Args = [include_erts, system_libs, vm_args, sys_config],
     RelxConfig2 = maybe_obey_command_args(RelxConfig1, Opts, Args),
     RelxExtConfig = rebar_state:get(State, relx_ext, []),
-    {ok, RelxExtState} = rlx_ext_config:to_state(RelxConfig2, RelxExtConfig),
+    {ok, RelxExtState} = relx_ext_config:to_state(RelxConfig2, RelxExtConfig),
 
     Providers = rebar_state:providers(State),
     Cwd = rebar_state:dir(State),
@@ -54,7 +54,6 @@ do(Provider, State) ->
         Provider when Provider == clusup; Provider == clusuptar ->
             [{ClusName, ToVsn}|_] = Clusters,
             UpFromVsn = proplists:get_value(upfrom, Opts, undefined),
-            rebar_api:info("clusname is ~p~n", [ClusName]),
             case Provider of
                 clusup ->
                     relx_ext:build_clusup(ClusName, ToVsn, UpFromVsn, RelxExtState);
@@ -111,7 +110,7 @@ format_error(Error) ->
     io_lib:format("~p", [Error]).
 
 parallel_run(Provider, [{ClusName, ClusVsn}], AllApps, RelxState) ->
-    case rlx_ext_state:get_cluster(RelxState, ClusName, ClusVsn) of
+    case relx_ext_state:get_cluster(RelxState, ClusName, ClusVsn) of
         {ok, Cluster} ->
             parallel_run(Provider, [Cluster], AllApps, RelxState);
         error ->
@@ -152,7 +151,7 @@ clusters_to_build(Provider, Opts, RelxExtState)->
         undefined ->
             case proplists:get_value(relname, Opts, undefined) of
                 undefined ->
-                    case rlx_ext_state:default_cluster(RelxExtState) of
+                    case relx_ext_state:default_cluster(RelxExtState) of
                         {ok, Cluster} ->
                             [Cluster];
                         {error, Reason} ->
@@ -162,7 +161,7 @@ clusters_to_build(Provider, Opts, RelxExtState)->
                     ClusName = list_to_atom(R),
                     case proplists:get_value(relvsn, Opts, undefined) of
                         undefined ->
-                            case rlx_ext_state:lastest_cluster(RelxExtState, ClusName) of
+                            case relx_ext_state:lastest_cluster(RelxExtState, ClusName) of
                                 {ok, Cluster} ->
                                     [Cluster];
                                 {error, Reason} ->
@@ -175,7 +174,7 @@ clusters_to_build(Provider, Opts, RelxExtState)->
         true when Provider =:= clusup; Provider =:= clusuptar ->
             erlang:error(?PRV_ERROR(all_clusup));
         true ->
-            maps:to_list(rlx_ext_state:lastest_clusters(RelxExtState))
+            maps:to_list(relx_ext_state:lastest_clusters(RelxExtState))
     end.
 
 %% Don't override output_dir if the user passed one on the command line

@@ -38,6 +38,9 @@ load({default_cluster, ClusName}, {ok, State}) when is_atom(ClusName) ->
 load({include_apps, Apps}, {ok, State}) ->
     State1 = relx_ext_state:include_apps(State, Apps),
     {ok, State1};
+load({overlay, Overlay}, {ok, State}) ->
+    State1 = relx_ext_state:overlay(State, Overlay),
+    {ok, State1};
 load(_, Error={error, _}) ->
     erlang:error(?RLX_ERROR(Error));
 load(InvalidTerm, {ok, State}) ->

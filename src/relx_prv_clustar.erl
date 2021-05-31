@@ -40,13 +40,13 @@ make_tar(State, Cluster, SubReleases, OutputDir) ->
     Name = relx_ext_cluster:name(Cluster),
     Vsn = relx_ext_cluster:vsn(Cluster),
     TarFile = filename:join(OutputDir, atom_to_list(Name) ++ "_" ++ Vsn ++ ".tar.gz"),
-    RlxState = relx_ext_state:rlx_state(State),
-    Files = tar_files(RlxState, Cluster, SubReleases, OutputDir),
+    Files = tar_files(State, Cluster, SubReleases, OutputDir),
     ok = erl_tar:create(TarFile, Files, [dereference,compressed]),
     rebar_api:info("tarball ~s successfully created!~n", [TarFile]),
     {ok, State}.
     
-tar_files(State, Cluster, SubReleases, OutputDir) ->
+tar_files(StateExt, Cluster, SubReleases, OutputDir) ->
+    State = relx_ext_state:rlx_state(StateExt),
     Name = relx_ext_cluster:name(Cluster),
     Vsn = relx_ext_cluster:vsn(Cluster),
     Release = relx_ext_cluster:solved_clus_release(Cluster),
@@ -69,7 +69,7 @@ tar_files(State, Cluster, SubReleases, OutputDir) ->
           end, [], SubReleases),
     BinFiles = cluster_files(OutputDir, Name, Vsn),
     OverlayVars = rlx_overlay:generate_overlay_vars(State, Release),
-    OverlayFiles = overlay_files(OverlayVars, rlx_state:overlay(State), OutputDir),
+    OverlayFiles = overlay_files(OverlayVars, relx_ext_state:overlay(StateExt), OutputDir),
     ErtsFiles = erts_files(ErtsVsn, State),
     ApplicationsFiles ++ SubReleaseFiles ++ OverlayFiles ++ ErtsFiles ++ BinFiles.
 

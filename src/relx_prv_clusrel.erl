@@ -33,13 +33,13 @@
 %% @doc recursively dig down into the library directories specified in the state
 %% looking for OTP Applications
 -spec do(term(),  rlx_state:t()) -> {ok, rlx_state:t()} | relx:error().
-do(Cluster, StateExt) ->
-    State = relx_ext_state:rlx_state(StateExt),
+do(Cluster, State) ->
+    RlxState = relx_ext_state:rlx_state(State),
     ClusName = relx_ext_cluster:name(Cluster),
-    OutputDir = filename:join(rlx_state:base_output_dir(State), ClusName),
+    OutputDir = filename:join(rlx_state:base_output_dir(RlxState), ClusName),
     case create_rel_files(State, Cluster, OutputDir) of
         {ok, State1} ->
-            sub_releases_overlay(Cluster, State1);
+            cluster_overlay(Cluster, State1, OutputDir);
         {error, Reason} ->
             {error, Reason}
     end.
@@ -47,26 +47,33 @@ do(Cluster, StateExt) ->
 -spec format_error(ErrorDetail::term()) -> iolist().
 format_error({unresolved_release, RelName, RelVsn}) ->
     io_lib:format("The release has not been resolved ~p-~s", [RelName, RelVsn]);
+format_error({release_generation_error, ReleaseName, Reason}) ->
+    io_lib:format("generate release error ~s to reason: ~p", [ReleaseName, Reason]);
 format_error(Reason) ->
     io_lib:format("~p", [Reason]).
 
 %%%===================================================================
 %%% Internal Functions
 %%%===================================================================
-create_rel_files(State, Cluster, OutputDir) ->
+create_rel_files(StateExt, Cluster, OutputDir) ->
+    State = relx_ext_state:rlx_state(StateExt),
     ClusRelease = relx_ext_cluster:solved_clus_release(Cluster),
     Variables = make_boot_script_variables(State, OutputDir),
     CodePath = rlx_util:get_code_paths(ClusRelease, OutputDir),
     write_cluster_booter_file(ClusRelease, OutputDir),
-
     Releases = relx_ext_cluster:solved_releases(Cluster),
     write_cluster_files(State, Releases, ClusRelease, OutputDir),
     lists:map(
       fun(Release) ->
               {release, _ErlInfo, _ErtsInfo, _Apps} = SubReleaseMeta = rlx_release:metadata(Release),
-              write_release_files(Release, SubReleaseMeta, Variables, CodePath, OutputDir)
+              case write_release_files(Release, SubReleaseMeta, Variables, CodePath, OutputDir) of
+                  ok ->
+                      ok;
+                  {error, Reason} ->
+                      rebar_api:error(format_error(Reason), [])
+              end
       end, Releases),
-    {ok, State}.
+    {ok, StateExt}.
 
 %% copy booter file from rebar3_relx_ext temple
 write_cluster_booter_file(Release, OutputDir) ->
@@ -138,23 +145,23 @@ write_release_files(Release, ReleaseMeta, Variables, CodePath, OutputDir) ->
     {release, ErlInfo, ErtsInfo, Apps} = ReleaseMeta,
     ReleaseLoadMeta = {release, ErlInfo, ErtsInfo, apps_load(Apps)},
     copy_base_file(OutputDir, SubOutputDir),
+
     case write_rel_files(RelFilename, ReleaseMeta, SubReleaseDir, SubOutputDir, Variables, CodePath) of
         ok ->
-            case create_RELEASES(OutputDir, RelFilename, ReleaseVsn) of
+            case write_rel_files(RelLoadFileName, ReleaseLoadMeta, SubReleaseDir, SubOutputDir, Variables, CodePath) of
                 ok ->
-                    generate_start_erl_data_file(Release, SubOutputDir),
-                    case write_rel_files(RelLoadFileName, ReleaseLoadMeta, SubReleaseDir, SubOutputDir, Variables, CodePath) of
+                    case create_RELEASES(OutputDir, RelFilename, ReleaseVsn) of
                         ok ->
-                            rename_and_clean_files(SubReleaseDir, RelFilename),
-                            ok;
+                            generate_start_erl_data_file(Release, SubOutputDir),
+                            rename_and_clean_files(SubReleaseDir, RelFilename);
                         {error, Reason} ->
-                            {error, Reason}
+                            ?RLX_ERROR({release_generation_error, ReleaseName, Reason})
                     end;
                 {error, Reason} ->
-                    {error, Reason}
-            end; 
+                    ?RLX_ERROR({rel_load_file_generate_error, ReleaseName, Reason})
+            end;
         {error, Reason} ->
-            {error, Reason}
+            ?RLX_ERROR({rel_file_generate_error, ReleaseName, Reason})
     end.
 
 %% rename and remove files make files like archived project directory
@@ -213,18 +220,33 @@ write_rel_files(RelFilename, Meta, ReleaseDir, _OutputDir, Variables, CodePath) 
             ?RLX_ERROR({release_script_generation_error, Module, Error})
     end.
 
-sub_releases_overlay(Cluster, State) ->
+cluster_overlay(Cluster, State, OutputDir) ->
+    ClusRelease = relx_ext_cluster:solved_clus_release(Cluster),
+    RlxState = relx_ext_state:rlx_state(State),
+    sub_releases_overlay(Cluster, RlxState, OutputDir),
+    %% use cluster overlay instead of release overlay
+    RlxState1 = rlx_state:overlay(RlxState, relx_ext_state:overlay(State)),
+    case rlx_overlay:render(ClusRelease, RlxState1) of
+        {ok, RlxState2} ->
+            State1 = relx_ext_state:rlx_state(State, RlxState2),
+            {ok, State1};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+sub_releases_overlay(Cluster, State, OutputDir) ->
+    State1 = rlx_state:base_output_dir(State, filename:join(OutputDir, "clients")),
     Releases = relx_ext_cluster:releases(Cluster),
-    Acc1 =
-        lists:map(
-          fun(Release) ->
-                  {ok, SolvedRelease, State1} = rlx_resolve:solve_release(Release, State),
-                  rlx_overlay:render(SolvedRelease, State1)
-          end, Releases),
-    relx_ext_lib:split_fails(
-      fun(_V, StateAcc) ->
-              StateAcc
-      end, State, Acc1).
+    lists:foreach(
+      fun(Release) ->
+              {ok, SolvedRelease, State2} = rlx_resolve:solve_release(Release, State1),
+              case rlx_overlay:render(SolvedRelease, State2) of
+                  {ok, _} ->
+                      ok;
+                  {error, Reason} ->
+                      ?RLX_ERROR({generate_overlay_failed, Reason})
+              end
+      end, Releases).
 
 apps_load(Apps) ->
     lists:map(
@@ -269,4 +291,3 @@ normalize_apps(Apps) ->
          ({Name, Vsn, _LoadType}) ->
               {Name, Vsn}
       end, Apps).
-

@@ -15,6 +15,7 @@
 -export([default_cluster/1]).
 -export([default_cluster_name/2]).
 -export([include_apps/1, include_apps/2]).
+-export([overlay/1, overlay/2]).
 -export([rlx_state/1, rlx_state/2]).
 -export([get_cluster/3]).
 -export([lastest_clusters/1]).
@@ -25,6 +26,7 @@
                     clusters = #{},
                     lastest_releases = #{},
                     include_apps = [],
+                    overlay = [],
                     rlx_state}).
 
 new(RlxState) ->
@@ -104,6 +106,12 @@ include_apps(#state_ext{include_apps = IncludeApps}) ->
 
 include_apps(State, IncludeApps) ->
     State#state_ext{include_apps = IncludeApps}.
+
+overlay(#state_ext{overlay = Overlay}) ->
+    Overlay.
+
+overlay(State, Overlay) ->
+    State#state_ext{overlay = Overlay}.
 
 lastest_clusters(#state_ext{lastest_clusters = LastestClusters}) ->
     LastestClusters.

@@ -25,15 +25,11 @@
 -export([do/2,
          format_error/1]).
 
--define(PROVIDER, clustar).
--define(DEPS, [compile]).
-
 %%============================================================================
 %% API
 %%============================================================================
 do(Cluster, State) ->
     RelxState = rlx_ext_state:rlx_state(State),
-    rebar_api:info("get rlx_state ~p~n", [rlx_state:include_src(RelxState)]),
     ClusName = rlx_cluster:name(Cluster),
     BaseOutputDir = rlx_state:base_output_dir(RelxState),
     OutputDir = filename:join(BaseOutputDir, ClusName),
@@ -95,10 +91,7 @@ erts_files(ErtsVsn, State) ->
         false ->
             [];
         Prefix ->
-            io:format("prefix is ~p~n", [Prefix]),
             ErtsDir = filename:join([Prefix]),
-            io:format("erts is ~p~n", [ErtsDir]),
-
             FromDir = filename:join([ErtsDir, "erts-" ++ ErtsVsn, "bin"]),
 	    ToDir = filename:join("erts-" ++ ErtsVsn, "bin"),
             [{ToDir, FromDir}]

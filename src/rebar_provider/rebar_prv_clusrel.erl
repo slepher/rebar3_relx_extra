@@ -11,7 +11,7 @@
 -export([init/1, do/1, format_error/1]).
 
 -define(PROVIDER, clusrel).
--define(DEPS, [compile]).
+-define(DEPS, [install_deps]).
 %% -define(DEPS, []).
 
 %% ===================================================================

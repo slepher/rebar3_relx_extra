@@ -54,6 +54,7 @@ do(Provider, State) ->
         Provider when Provider == clusup; Provider == clusuptar ->
             [{ClusName, ToVsn}|_] = Clusters,
             UpFromVsn = proplists:get_value(upfrom, Opts, undefined),
+            rebar_api:info("clusname is ~p~n", [ClusName]),
             case Provider of
                 clusup ->
                     relx_ext:build_clusup(ClusName, ToVsn, UpFromVsn, RelxExtState);

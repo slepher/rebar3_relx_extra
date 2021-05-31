@@ -20,14 +20,12 @@
 %%% API
 %%%===================================================================
 build_clusrel(Cluster, Apps, State) ->
-    rebar_api:info("apps is ~p~n", [Apps]),
     {ok, RealizedCluster, State1} =
         rlx_ext_resolve:solve_cluster(Cluster, Apps, State),
     {ok, State2} = rlx_app_assemble:do(RealizedCluster, State1),
     rlx_clusrel:do(RealizedCluster, State2).
 
 build_clustar(Cluster, Apps, State) ->
-    rebar_api:info("apps is ~p~n", [Apps]),
     {ok, RealizedCluster, State1} =
         rlx_ext_resolve:solve_cluster(Cluster, Apps, State),
     rlx_clustar:do(RealizedCluster, State1).
@@ -48,41 +46,6 @@ build_clusuptar(ClusterName, ClusterVsn, UpFromVsn, RelxState) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-pick_release(State) ->
-    %% Here we will just get the highest versioned release and run that.
-    case lists:sort(fun release_sort/2, maps:to_list(rlx_state:configured_releases(State))) of
-        [{{RelName, RelVsn}, _} | _] ->
-            {RelName, RelVsn};
-        [] ->
-            erlang:error(?RLX_ERROR(no_releases_in_system))
-    end.
-
-pick_release_version(undefined, State) ->
-    pick_release(State);
-pick_release_version(RelName, State) ->
-    %% Here we will just get the lastest version for name RelName and run that.
-    AllReleases = maps:to_list(rlx_state:configured_releases(State)),
-    SpecificReleases = [Rel || Rel={{PossibleRelName, _}, _} <- AllReleases, PossibleRelName =:= RelName],
-    case lists:sort(fun release_sort/2, SpecificReleases) of
-        [{{RelName, RelVsn}, _} | _] ->
-            {RelName, RelVsn};
-        [] ->
-            erlang:error(?RLX_ERROR({no_releases_for, RelName}))
-    end.
-
--spec release_sort({{rlx_release:name(),rlx_release:vsn()}, term()},
-                   {{rlx_release:name(),rlx_release:vsn()}, term()}) ->
-                          boolean().
-release_sort({{RelName, RelVsnA}, _},
-             {{RelName, RelVsnB}, _}) ->
-    rlx_util:parsed_vsn_lte(rlx_util:parse_vsn(RelVsnB), rlx_util:parse_vsn(RelVsnA));
-release_sort({{RelA, _}, _}, {{RelB, _}, _}) ->
-    %% The release names are different. When the releases are named differently
-    %% we can not just take the lastest version. You *must* provide a default
-    %% release name at least. So we throw an error here that the top can catch
-    %% and return
-    error(?RLX_ERROR({multiple_release_names, RelA, RelB})).
-
 -spec format_error(Reason::term()) -> string().
 format_error({unrecognized_release, Release}) ->
     io_lib:format("Could not understand release argument ~p~n", [Release]);

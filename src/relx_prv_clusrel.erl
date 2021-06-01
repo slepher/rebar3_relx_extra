@@ -34,12 +34,14 @@
 %% looking for OTP Applications
 -spec do(term(),  rlx_state:t()) -> {ok, rlx_state:t()} | relx:error().
 do(Cluster, State) ->
+    fprof:start(),
     RlxState = relx_ext_state:rlx_state(State),
     ClusName = relx_ext_cluster:name(Cluster),
     OutputDir = filename:join(rlx_state:base_output_dir(RlxState), ClusName),
     case create_rel_files(State, Cluster, OutputDir) of
         {ok, State1} ->
-            cluster_overlay(Cluster, State1, OutputDir);
+            cluster_overlay(Cluster, State1, OutputDir),
+            {ok, State1};
         {error, Reason} ->
             {error, Reason}
     end.
@@ -59,20 +61,21 @@ create_rel_files(StateExt, Cluster, OutputDir) ->
     State = relx_ext_state:rlx_state(StateExt),
     ClusRelease = relx_ext_cluster:solved_clus_release(Cluster),
     Variables = make_boot_script_variables(State, OutputDir),
-    CodePath = rlx_util:get_code_paths(ClusRelease, OutputDir),
     write_cluster_booter_file(ClusRelease, OutputDir),
     Releases = relx_ext_cluster:solved_releases(Cluster),
-    write_cluster_files(State, Releases, ClusRelease, OutputDir),
     lists:map(
       fun(Release) ->
               {release, _ErlInfo, _ErtsInfo, _Apps} = SubReleaseMeta = rlx_release:metadata(Release),
-              case write_release_files(Release, SubReleaseMeta, Variables, CodePath, OutputDir) of
+              case write_release_files(Release, SubReleaseMeta, Variables, OutputDir) of
                   ok ->
+                      rebar_api:info("Release file of ~s-~s generated", [rlx_release:name(Release), rlx_release:vsn(Release)]),
                       ok;
                   {error, Reason} ->
                       rebar_api:error(format_error(Reason), [])
               end
       end, Releases),
+    write_cluster_files(State, Releases, ClusRelease, OutputDir),
+    rebar_api:info("Cluster file of ~s-~s generated", [relx_ext_cluster:name(Cluster), relx_ext_cluster:vsn(Cluster)]),
     {ok, StateExt}.
 
 %% copy booter file from rebar3_relx_ext temple
@@ -133,7 +136,8 @@ sub_release_dir(Release, OutputDir) ->
     SubOutputDir = sub_output_dir(Release, OutputDir),
     filename:join([SubOutputDir, "releases", Vsn]).
 
-write_release_files(Release, ReleaseMeta, Variables, CodePath, OutputDir) ->
+write_release_files(Release, ReleaseMeta, Variables, OutputDir) ->
+    CodePath = rlx_util:get_code_paths(Release, OutputDir),
     SubOutputDir = sub_output_dir(Release, OutputDir),
     SubReleaseDir = sub_release_dir(Release, OutputDir),
     ok = ec_file:mkdir_p(SubOutputDir),
@@ -145,7 +149,6 @@ write_release_files(Release, ReleaseMeta, Variables, CodePath, OutputDir) ->
     {release, ErlInfo, ErtsInfo, Apps} = ReleaseMeta,
     ReleaseLoadMeta = {release, ErlInfo, ErtsInfo, apps_load(Apps)},
     copy_base_file(OutputDir, SubOutputDir),
-
     case write_rel_files(RelFilename, ReleaseMeta, SubReleaseDir, SubOutputDir, Variables, CodePath) of
         ok ->
             case write_rel_files(RelLoadFileName, ReleaseLoadMeta, SubReleaseDir, SubOutputDir, Variables, CodePath) of
@@ -197,8 +200,6 @@ copy_base_file(_OutputDir, SubOutputDir) ->
         false ->
             ok = file:make_symlink("../../lib", Symlink)
     end.
-    %% copy_file_from(OutputDir, SubOutputDir, filename:join(["bin", "install_upgrade.escript"])),
-    %% copy_file_from(OutputDir, SubOutputDir, filename:join(["bin", "nodetool"])).
 
 write_rel_files(RelFilename, Meta, ReleaseDir, _OutputDir, Variables, CodePath) ->
     ReleaseFile1 = filename:join([ReleaseDir, RelFilename ++ ".rel"]),

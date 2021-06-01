@@ -20,6 +20,12 @@
 -export([get_cluster/3]).
 -export([lastest_clusters/1]).
 -export([lastest_cluster/2]).
+-export([checkouts_dir/1, checkouts_dir/2, base_dir/1, base_dir/2, release_base_dir/1]).
+-export([pre_purge/1, pre_purge/2, post_purge/1, post_purge/2, appup_template/1, appup_template/2]).
+
+-define(DEFAULT_PRE_PURGE, brutal_purge).
+-define(DEFAULT_POST_PURGE, brutal_purge).
+
 
 -record(state_ext, {default_cluster_name,
                     lastest_clusters = #{},
@@ -27,6 +33,12 @@
                     lastest_releases = #{},
                     include_apps = [],
                     overlay = [],
+                    checkouts_dir,
+                    base_dir,
+                    release_base_dir,
+                    pre_purge = ?DEFAULT_PRE_PURGE,
+                    post_purge = ?DEFAULT_POST_PURGE,
+                    appup_template,
                     rlx_state}).
 
 new(RlxState) ->
@@ -116,6 +128,38 @@ overlay(State, Overlay) ->
 lastest_clusters(#state_ext{lastest_clusters = LastestClusters}) ->
     LastestClusters.
 
+checkouts_dir(#state_ext{checkouts_dir = CheckoutsDir}) ->
+    CheckoutsDir.
+
+checkouts_dir(State, CheckoutsDir) ->
+    State#state_ext{checkouts_dir = CheckoutsDir}.
+
+base_dir(#state_ext{base_dir = BaseDir}) ->
+    BaseDir.
+
+base_dir(State, BaseDir) ->
+    State#state_ext{base_dir = BaseDir}.
+
+release_base_dir(#state_ext{release_base_dir = ReleaseBaseDir}) ->
+    ReleaseBaseDir.
+
+pre_purge(#state_ext{pre_purge = PrePurge}) ->
+    PrePurge.
+
+pre_purge(State, PrePurge) ->
+    State#state_ext{pre_purge = PrePurge}.
+
+post_purge(#state_ext{post_purge = PostPurge}) ->
+    PostPurge.
+
+post_purge(State, PostPurge) ->
+    State#state_ext{post_purge = PostPurge}.
+
+appup_template(#state_ext{appup_template = AppupTemplate}) ->
+    AppupTemplate.
+
+appup_template(State, AppupTemplate) ->
+    State#state_ext{appup_template = AppupTemplate}.
 %%%===================================================================
 %%% API
 %%%===================================================================

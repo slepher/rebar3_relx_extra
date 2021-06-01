@@ -1,48 +1,15 @@
-%% -*- erlang-indent-level: 4;indent-tabs-mode: nil -*-
-%% ex: ts=4 sw=4 et
-%% -------------------------------------------------------------------
-%%
-%% Copyright (c) 2016 Luis Rascão.  All Rights Reserved.
-%%
-%% This file is provided to you under the Apache License,
-%% Version 2.0 (the "License"); you may not use this file
-%% except in compliance with the License.  You may obtain
-%% a copy of the License at
-%%
-%%   http://www.apache.org/licenses/LICENSE-2.0
-%%
-%% Unless required by applicable law or agreed to in writing,
-%% software distributed under the License is distributed on an
-%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-%% KIND, either express or implied.  See the License for the
-%% specific language governing permissions and limitations
-%% under the License.
-%%
-%% -------------------------------------------------------------------
+%%%-------------------------------------------------------------------
+%%% @author Chen Slepher <slepheric@gmail.com>
+%%% @copyright (C) 2020, Chen Slepher
+%%% @doc
+%%%
+%%% @end
+%%% Created : 27 Feb 2020 by Chen Slepher <slepheric@gmail.com>
+%%%-------------------------------------------------------------------
+-module(relx_prv_appup).
 
-%% this file is from https://github.com/lrascao/rebar3_appup_plugin/blob/develop/src/rebar3_appup_generate.erl 
-%% delete non related functions and exported some new functions.
+-export([do/6, format_error/1]).
 
--module(rebar_appup_lib).
-
-%% exported for eunit
--export([matching_versions/2,
-         merge_instructions/7]).
--export([get_current_rel_path/2]).
--export([deduce_previous_version/4]).
--export([get_apps/6]).
--export([generate_appups/9]).
-
--define(PRIV_DIR, "priv").
-
--define(APPUP_TEMPLATE, "templates/appup.tpl").
-
--define(APPUPFILEFORMAT, "%% appup generated for ~p by rebar3_appup_plugin (~p)~n"
-        "{~p,\n\t[{~p, \n\t\t~p}], \n\t[{~p, \n\t\t~p}\n]}.~n").
-
--define(DEFAULT_RELEASE_DIR, "rel").
--define(DEFAULT_PRE_PURGE, brutal_purge).
--define(DEFAULT_POST_PURGE, brutal_purge).
 
 -define(SUPPORTED_BEHAVIOURS, [gen_server,
                                gen_fsm,
@@ -51,142 +18,48 @@
                                application,
                                supervisor]).
 
+
 %% ===================================================================
 %% Public API
 %% ===================================================================
-generate_appups(CurrentRelPath, PreviousRelPath,  TargetDir, _CurrentVer, Opts, AddApps0, UpgradeApps0, RemoveApps, State) ->
-    %% search for this plugin's appinfo in order to know
-    %% where to look for the mustache templates
-    Apps = rebar_state:all_plugin_deps(State),
-    PluginInfo = rebar3_appup_utils:appup_plugin_appinfo(Apps),
-    PluginDir = rebar_app_info:dir(PluginInfo),
-    %% Get a list of any appup files that exist in the current release
-    CurrentAppUpFiles = rebar3_appup_utils:find_files_by_ext(
-                            filename:join([CurrentRelPath, "lib"]),
-                            ".appup"),
-    %% Convert the list of appup files into app names
-    CurrentAppUpApps = lists:usort([appup_info(File) || File <- CurrentAppUpFiles]),
-    rebar_api:debug("apps that already have .appups: ~p", [CurrentAppUpApps]),
+do(ClusName, ClusVsn, UpFromVsn, Apps, Opts, State) ->
+    CurrentRelPath = get_current_rel_path(State, ClusName),
+    rebar_api:info("current release, name: ~s, version: ~s, upfrom version: ~s", [ClusName, ClusVsn, UpFromVsn]),
+    PreviousRelPath =
+        case proplists:get_value(previous, Opts, undefined) of
+            undefined -> CurrentRelPath;
+            P -> P
+        end,
+    rebar_api:info("previous release: ~s", [PreviousRelPath]),
+    rebar_api:info("current release: ~s", [CurrentRelPath]),
 
-    %% Create a list of apps that don't already have appups
-    UpgradeApps1 = gen_appup_which_apps(UpgradeApps0, State),
-    AddApps = gen_appup_which_apps(AddApps0, State),
-    UpgradeApps = UpgradeApps1 ++ AddApps,
-    rebar_api:debug("generating .appup for apps: ~p",
-        [AddApps ++ UpgradeApps ++ RemoveApps]),
+    %% Run some simple checks
+    true = rebar3_appup_utils:prop_check(ClusVsn =/= UpFromVsn,
+                                         "current (~p) and previous (~p) release versions are the same",
+                                         [ClusVsn, UpFromVsn]),
 
-    PurgeOpts0 = proplists:get_value(purge, Opts, []),
-    PurgeOpts = parse_purge_opts(PurgeOpts0),
+    %% Find all the apps that have been upgraded
+    {AddApps0, UpgradeApps0, RemoveApps} = get_apps(ClusName, PreviousRelPath, UpFromVsn, CurrentRelPath, ClusVsn),
 
-    AppupOpts = [{purge_opts, PurgeOpts},
-                 {plugin_dir, PluginDir}],
-    rebar_api:debug("appup opts: ~p", [AppupOpts]),
+  
+    generate_appups(
+      CurrentRelPath, PreviousRelPath, ClusVsn, Apps, AddApps0, UpgradeApps0, RemoveApps, State),
+    {ok, State}.
 
-    %% Generate appup files for apps
-    lists:foreach(fun(App) ->
-                    generate_appup_files(TargetDir,
-                                         CurrentRelPath, PreviousRelPath,
-                                         App,
-                                         AppupOpts, State)
-                  end, AddApps ++ UpgradeApps),
-    ok.
+-spec format_error(any()) ->  iolist().
+format_error(Reason) ->
+    io_lib:format("~p", [Reason]).
 
-app_ebin(App, State) ->
-    app_dir(App, State, "ebin").
+get_current_rel_path(State, Name) ->
+    RelxState = relx_ext_state:rlx_state(State),
+    Dir = rlx_state:base_output_dir(RelxState),
+    filename:join(Dir, Name).
 
-app_dir(App, State, Dir) ->
-    CurrentBaseDir = rebar_dir:base_dir(State),
-    %% check for the app either in deps or lib
-    CheckoutsDir = filename:join([rebar_dir:checkouts_dir(State),
-                                      atom_to_list(App), Dir]),
-    DepsDir = filename:join([CurrentBaseDir, "deps",
-                                 atom_to_list(App), Dir]),
-    LibDir = filename:join([CurrentBaseDir, "lib",
-                                atom_to_list(App), Dir]),
-    case {filelib:is_dir(DepsDir),
-          filelib:is_dir(LibDir),
-          filelib:is_dir(CheckoutsDir)} of
-        {true, _, _} -> DepsDir;
-        {_, true, _} -> LibDir;
-        {_, _, true} -> CheckoutsDir;
-        {_, _, _} -> undefined
-    end.
-
-gen_appup_which_apps(Apps, State) ->
-    gen_appup_which_apps(Apps, State, []).
-
-gen_appup_which_apps([App|T], State, Acc) ->
-    AppName = element(2, App),
-    AppEbinDir = app_ebin(AppName, State),
-    Appup = filename:join([AppEbinDir, atom_to_list(AppName) ++ ".appup"]),
-    case filelib:is_file(Appup) of
-        true ->
-            {_, Vsn} = appup_info(Appup),
-            rebar_api:info("appup ~p for ~p ~s exists", [Vsn, AppName, Appup]),
-            gen_appup_which_apps(T, State, Acc);
-        false ->
-            gen_appup_which_apps(T, State, [App|Acc])
-    end;
-gen_appup_which_apps([], _State, Acc) ->
-    lists:reverse(Acc).
-
-parse_purge_opts(Opts0) when is_list(Opts0) ->
-    Opts1 = re:split(Opts0, ";"),
-    lists:map(fun(Opt) ->
-                case re:split(Opt, "=") of
-                    [Module, PrePostPurge] ->
-                        {PrePurge, PostPurge} =
-                            case re:split(PrePostPurge, "/") of
-                                [PrePurge0, PostPurge0] ->
-                                    {PrePurge0, PostPurge0};
-                                [PrePostPurge] ->
-                                    {PrePostPurge, PrePostPurge}
-                            end,
-                        {list_to_atom(binary_to_list(Module)),
-                          {purge_opt(PrePurge), purge_opt(PostPurge)}};
-                    _ -> []
-                end
-              end, Opts1).
-
-%% @spec purge_opt(<<_:32,_:_*16>>) -> 'brutal_purge' | 'soft_purge'.
-purge_opt(<<"soft">>) -> soft_purge;
-purge_opt(<<"brutal">>) -> brutal_purge.
-
-%% @spec get_purge_opts(atom() | tuple(),[any()]) -> {_,_}.
-get_purge_opts(Name, Opts) ->
-    {DefaultPrePurge, DefaultPostPurge} = proplists:get_value(default, Opts, {?DEFAULT_PRE_PURGE, ?DEFAULT_POST_PURGE}),
-    {PrePurge, PostPurge} = proplists:get_value(Name, Opts, {DefaultPrePurge, DefaultPostPurge}),
-    {PrePurge, PostPurge}.
-
-%% @spec deduce_previous_version(string(),_,atom() | binary() | [atom() | [any()] | char()],atom() | binary() | [atom() | [any()] | char()]) -> any().
-deduce_previous_version(Name, CurrentVersion, CurrentRelPath, PreviousRelPath) ->
-    Versions = rebar3_appup_rel_utils:get_release_versions(Name, PreviousRelPath),
-    case length(Versions) of
-        N when N =:= 1 andalso CurrentRelPath =:= PreviousRelPath ->
-            rebar_api:abort("only 1 version is present in ~p (~p) expecting at least 2",
-                [PreviousRelPath, hd(Versions)]);
-        %% the case below means the user requested the --previous option and there is exactly
-        %% one release in that path, use that one
-        N when N =:= 1 ->
-            hd(Versions);
-        %% there are two releases and the user didn't request an alternative previous
-        %% release path, infer the old one
-        N when N =:= 2 andalso CurrentRelPath =:= PreviousRelPath ->
-            hd(Versions -- [CurrentVersion]);
-        N when N >= 2 ->
-            rebar_api:abort("more than 2 versions are present in ~p: (~.0p), please use the --previous_version "
-                            "option to choose which version to upgrade from",
-                            [PreviousRelPath, Versions])
-    end.
-
-%% @spec get_apps(string(),atom() | binary() | [atom() | [any()] | char()],[atom() | [any()] | char()],atom() | binary() | [atom() | [any()] | char()],[atom() | [any()] | char()]) -> [any()].
-get_apps(Name, OldVerPath, OldVer, NewVerPath, NewVer, State) ->
-    OldApps0 = get_clus_apps(Name, OldVer, OldVerPath),
-    OldApps = rebar3_appup_rel_utils:exclude_otp_apps(OldApps0, State),
+get_apps(Name, OldVerPath, OldVer, NewVerPath, NewVer) ->
+    OldApps = get_clus_apps(Name, OldVer, OldVerPath),
     rebar_api:debug("previous version apps: ~p", [OldApps]),
 
     NewApps = get_clus_apps(Name, NewVer, NewVerPath),
-    %% NewApps = rebar3_appup_rel_utils:exclude_otp_apps(NewApps0, State),
     rebar_api:debug("current version apps: ~p", [NewApps]),
 
     AddedApps = app_list_diff(NewApps, OldApps),
@@ -215,7 +88,7 @@ get_apps(Name, OldVerPath, OldVer, NewVerPath, NewVer, State) ->
     {Added, Upgraded, Removed}.
 
 get_clus_apps(Name, Version, Path) ->
-    Filename = filename:join([Path, "releases", Version, Name ++ ".clus"]),
+    Filename = filename:join([Path, "releases", Version, atom_to_list(Name) ++ ".clus"]),
     case filelib:is_file(Filename) of
         true ->
             case file:consult(Filename) of
@@ -234,9 +107,44 @@ app_list_diff(List1, List2) ->
                          lists:sort(proplists:get_keys(List2))),
     List3 -- proplists:get_keys(List2).
 
-%% @spec file_to_name(atom() | binary() | [atom() | [any()] | char()]) -> binary() | string().
-file_to_name(File) ->
-    filename:rootname(filename:basename(File)).
+
+generate_appups(CurrentRelPath, PreviousRelPath, _CurrentVer, AppDirs,
+                AddApps0, UpgradeApps0, RemoveApps, State) ->
+
+    %% Create a list of apps that don't already have appups
+    UpgradeApps1 = gen_appup_which_apps(UpgradeApps0, AppDirs),
+    AddApps = gen_appup_which_apps(AddApps0, AppDirs),
+    UpgradeApps = UpgradeApps1 ++ AddApps,
+    rebar_api:debug("generating .appup for apps: ~p", [AddApps ++ UpgradeApps ++ RemoveApps]),
+
+    %% Generate appup files for apps
+    lists:foreach(fun(App) ->
+                    generate_appup_files(CurrentRelPath, PreviousRelPath,
+                                         App, AppDirs, State)
+                  end, AddApps ++ UpgradeApps),
+    ok.
+
+gen_appup_which_apps(Apps, AppDirs) ->
+    gen_appup_which_apps(Apps, AppDirs, []).
+
+gen_appup_which_apps([App|T], AppDirs, Acc) ->
+    AppName = element(2, App),
+    case maps:find(AppName, AppDirs) of
+        {ok, #{dir := AppDir}} ->
+            Appup = filename:join([AppDir, "ebin", atom_to_list(AppName) ++ ".appup"]),
+            case filelib:is_file(Appup) of
+                true ->
+                    {_, Vsn} = appup_info(Appup),
+                    rebar_api:info("appup ~p for ~p ~s exists", [Vsn, AppName, Appup]),
+                    gen_appup_which_apps(T, AppDirs, Acc);
+                false ->
+                    gen_appup_which_apps(T, AppDirs, [App|Acc])
+            end;
+        error ->
+            gen_appup_which_apps(T, AppDirs, [App|Acc])
+    end;
+gen_appup_which_apps([], _AppDirs, Acc) ->
+    lists:reverse(Acc).
 
 %% @spec appup_info(string()) -> {App :: atom(),
 %%                                ToVersion :: string()}.
@@ -244,33 +152,33 @@ appup_info(File) ->
     {ok, [{ToVersion, _, _}]} = file:consult(File),
     {file_to_name(File), ToVersion}.
 
-%% @spec generate_appup_files(_,atom() | binary() | [atom() | [any()] | char()],atom() | binary() | [atom() | [any()] | char()],{'upgrade',_,{'undefined' | [any()],_}},[{'plugin_dir',_} | {'purge_opts',[any()]},...],_) -> 'ok'.
-generate_appup_files(_, _, _, {upgrade, _App, {undefined, _}}, _, _) -> ok;
-generate_appup_files(TargetDir,
-                     NewVerPath, _OldVerPath,
+%% @spec file_to_name(atom() | binary() | [atom() | [any()] | char()]) -> binary() | string().
+file_to_name(File) ->
+    filename:rootname(filename:basename(File)).
+
+generate_appup_files(_, _, {upgrade, _App, {undefined, _}}, _, _) -> ok;
+generate_appup_files(NewVerPath, _OldVerPath,
                      {add, App, Version},
-                     Opts, State) ->
+                     AppDirs, State) ->
 
     UpgradeInstructions = [{add_application, App, permanent}],
     DowngradeInstructions = lists:reverse(lists:map(fun invert_instruction/1,
                                                     UpgradeInstructions)),
     NewRelEbinDir = filename:join([NewVerPath, "lib",
                                    atom_to_list(App) ++ "-" ++ Version, "ebin"]),
-    ok = write_appup(App, ".*", Version, NewRelEbinDir, TargetDir,
+    ok = write_appup(App, ".*", Version, NewRelEbinDir,
                      UpgradeInstructions, DowngradeInstructions,
-                     Opts, State),
+                     AppDirs, State),
     ok;
-generate_appup_files(TargetDir,
-                     NewVerPath, OldVerPath,
+generate_appup_files(NewVerPath, OldVerPath,
                      {upgrade, App, {OldVer, NewVer}},
-                     Opts, State) ->
+                     AppDirs, State) ->
     OldRelEbinDir = filename:join([OldVerPath, "lib",
                                 atom_to_list(App) ++ "-" ++ OldVer, "ebin"]),
     NewRelEbinDir = filename:join([NewVerPath, "lib",
                                 atom_to_list(App) ++ "-" ++ NewVer, "ebin"]),
 
-    {AddedFiles, DeletedFiles, ChangedFiles} = beam_lib:cmp_dirs(NewRelEbinDir,
-                                                                 OldRelEbinDir),
+    {AddedFiles, DeletedFiles, ChangedFiles} = beam_lib:cmp_dirs(NewRelEbinDir, OldRelEbinDir),
     rebar_api:debug("beam files:", []),
     rebar_api:debug("   added: ~p", [AddedFiles]),
     rebar_api:debug("   deleted: ~p", [DeletedFiles]),
@@ -281,13 +189,13 @@ generate_appup_files(TargetDir,
     rebar_api:debug("deps: ~p", [ModDeps]),
 
     Added = lists:map(fun(File) ->
-                        generate_instruction(add_module, ModDeps, File, Opts)
+                        generate_instruction(add_module, ModDeps, File, State)
                       end, AddedFiles),
     Deleted = lists:map(fun(File) ->
-                            generate_instruction(delete_module, ModDeps, File, Opts)
+                            generate_instruction(delete_module, ModDeps, File, State)
                         end, DeletedFiles),
     Changed = lists:map(fun(File) ->
-                            generate_instruction(upgrade, ModDeps, File, Opts)
+                            generate_instruction(upgrade, ModDeps, File, State)
                         end, ChangedFiles),
 
     UpgradeInstructions0 = lists:append([Added, Changed, Deleted]),
@@ -303,9 +211,52 @@ generate_appup_files(TargetDir,
     DowngradeInstructions = lists:flatten(DowngradeInstructions0),
     rebar_api:debug("downgrade instructions: ~p", [DowngradeInstructions]),
 
-    ok = write_appup(App, OldVer, NewVer, NewRelEbinDir, TargetDir,
-                     UpgradeInstructions, DowngradeInstructions,
-                     Opts, State),
+    ok = write_appup(App, OldVer, NewVer, NewRelEbinDir,
+                     UpgradeInstructions, DowngradeInstructions, AppDirs, State),
+    ok.
+
+%% @spec write_appup(atom(),_,_,atom() | binary() | [atom() | [any()] | char()],[any()],[{'add_module',_} | {'apply',{_,_,_}} | {'delete_module',_} | {'remove_application',_} | {'add_application',_,'permanent'} | {'update',_,'supervisor'} | {'load_module',_,_,_,_} | {'update',_,{_,_},_,_,_}],[{'plugin_dir',_} | {'purge_opts',[any()]},...],_) -> 'ok'.
+write_appup(App, OldVer, NewVer, NewRelEbinDir,
+            UpgradeInstructions0, DowngradeInstructions0, AppDirs, State) ->
+    AppUpFiles = [filename:join([NewRelEbinDir, atom_to_list(App) ++ ".appup"])],
+
+    rebar_api:debug(
+        "Upgrade instructions before merging with .appup.pre.src and "
+        ".appup.post.src files: ~p",
+        [UpgradeInstructions0]),
+    rebar_api:debug(
+        "Downgrade instructions before merging with .appup.pre.src and "
+        ".appup.post.src files: ~p",
+        [DowngradeInstructions0]),
+    {UpgradeInstructions, DowngradeInstructions} =
+        merge_instructions(App, AppUpFiles, UpgradeInstructions0, DowngradeInstructions0, OldVer, NewVer, AppDirs),
+    rebar_api:debug(
+        "Upgrade instructions after merging with .appup.pre.src and "
+        ".appup.post.src files:\n~p\n",
+        [UpgradeInstructions]),
+    rebar_api:debug(
+        "Downgrade instructions after merging with .appup.pre.src and "
+        ".appup.post.src files:\n~p\n",
+        [DowngradeInstructions]),
+
+    {ok, AppupTemplate} = file:read_file(relx_ext_state:appup_template(State)),
+
+    %% write each of the .appup files
+    lists:foreach(fun(AppUpFile) ->
+                    AppupCtx = [{"app", App},
+                                {"now", rebar3_appup_utils:now_str()},
+                                {"new_vsn", NewVer},
+                                {"old_vsn", OldVer},
+                                {"upgrade_instructions",
+                                    io_lib:fwrite("~.9p", [UpgradeInstructions])},
+                                {"downgrade_instructions",
+                                    io_lib:fwrite("~.9p", [DowngradeInstructions])}],
+                    EscFun = fun(X) -> X end,
+                    AppUp = bbmustache:render(AppupTemplate, AppupCtx, [{escape_fun, EscFun}]),
+                    rebar_api:info("Generated appup (~p <-> ~p) for ~p in ~p",
+                        [OldVer, NewVer, App, AppUpFile]),
+                    ok = file:write_file(AppUpFile, AppUp)
+                  end, AppUpFiles),
     ok.
 
 %% @spec module_dependencies([string() | {[any()],[any()]}]) -> [{atom(),[any()]}].
@@ -341,58 +292,6 @@ module_dependencies([Mod | Rest], Mods, Acc) ->
     Deps = sets:to_list(sets:intersection(Set0, Set1)),
     module_dependencies(Rest, Mods, Acc ++ [{Mod, Deps}]).
 
-%% @spec write_appup(atom(),_,_,atom() | binary() | [atom() | [any()] | char()],[any()],[{'add_module',_} | {'apply',{_,_,_}} | {'delete_module',_} | {'remove_application',_} | {'add_application',_,'permanent'} | {'update',_,'supervisor'} | {'load_module',_,_,_,_} | {'update',_,{_,_},_,_,_}],[{'plugin_dir',_} | {'purge_opts',[any()]},...],_) -> 'ok'.
-write_appup(App, OldVer, NewVer, NewRelEbinDir, TargetDir,
-            UpgradeInstructions0, DowngradeInstructions0,
-            Opts, State) ->
-    AppUpFiles = case TargetDir of
-                    undefined ->
-                         EbinAppup = filename:join([NewRelEbinDir,
-                                                    atom_to_list(App) ++ ".appup"]),
-                         [EbinAppup];
-                    _ ->
-                        [filename:join([TargetDir, atom_to_list(App) ++ ".appup"])]
-                 end,
-
-    rebar_api:debug(
-        "Upgrade instructions before merging with .appup.pre.src and "
-        ".appup.post.src files: ~p",
-        [UpgradeInstructions0]),
-    rebar_api:debug(
-        "Downgrade instructions before merging with .appup.pre.src and "
-        ".appup.post.src files: ~p",
-        [DowngradeInstructions0]),
-    {UpgradeInstructions, DowngradeInstructions} =
-        merge_instructions(App, AppUpFiles, UpgradeInstructions0, DowngradeInstructions0, OldVer, NewVer, State),
-    rebar_api:debug(
-        "Upgrade instructions after merging with .appup.pre.src and "
-        ".appup.post.src files:\n~p\n",
-        [UpgradeInstructions]),
-    rebar_api:debug(
-        "Downgrade instructions after merging with .appup.pre.src and "
-        ".appup.post.src files:\n~p\n",
-        [DowngradeInstructions]),
-
-    {ok, AppupTemplate} = file:read_file(filename:join([proplists:get_value(plugin_dir, Opts),
-                                                        ?PRIV_DIR, ?APPUP_TEMPLATE])),
-    %% write each of the .appup files
-    lists:foreach(fun(AppUpFile) ->
-                    AppupCtx = [{"app", App},
-                                {"now", rebar3_appup_utils:now_str()},
-                                {"new_vsn", NewVer},
-                                {"old_vsn", OldVer},
-                                {"upgrade_instructions",
-                                    io_lib:fwrite("~.9p", [UpgradeInstructions])},
-                                {"downgrade_instructions",
-                                    io_lib:fwrite("~.9p", [DowngradeInstructions])}],
-                    EscFun = fun(X) -> X end,
-                    AppUp = bbmustache:render(AppupTemplate, AppupCtx, [{escape_fun, EscFun}]),
-                    rebar_api:info("Generated appup (~p <-> ~p) for ~p in ~p",
-                        [OldVer, NewVer, App, AppUpFile]),
-                    ok = file:write_file(AppUpFile, AppUp)
-                  end, AppUpFiles),
-    ok.
-
 %% @spec generate_instruction('add_module' | 'delete_module' | 'upgrade',[{atom(),[any()]}],atom() | binary() | [atom() | [any()] | char()] | {atom() | binary() | string() | tuple(),_},[{'plugin_dir',_} | {'purge_opts',[any()]},...]) -> {'delete_module',atom()} | {'add_module',atom(),_} | {'update',atom() | tuple(),'supervisor'} | {'load_module',atom() | tuple(),_,_,_} | {'update',atom() | tuple(),{'advanced',[]},_,_,_}.
 generate_instruction(add_module, ModDeps, File, _Opts) ->
     Name = list_to_atom(file_to_name(File)),
@@ -418,22 +317,22 @@ generate_instruction(upgrade, ModDeps, {File, _}, Opts) ->
     generate_instruction_advanced(Name, Behavior, CodeChange, Deps, Opts).
 
 %% @spec generate_instruction_advanced(atom() | tuple(),_,'code_change' | 'undefined',_,[{'plugin_dir',_} | {'purge_opts',[any()]},...]) -> {'update',atom() | tuple(),'supervisor'} | {'load_module',atom() | tuple(),_,_,_} | {'update',atom() | tuple(),{'advanced',[]},_,_,_}.
-generate_instruction_advanced(Name, undefined, undefined, Deps, Opts) ->
-    PurgeOpts = proplists:get_value(purge_opts, Opts, []),
-    {PrePurge, PostPurge} = get_purge_opts(Name, PurgeOpts),
+generate_instruction_advanced(Name, undefined, undefined, Deps, State) ->
+    PrePurge = relx_ext_state:pre_purge(State),
+    PostPurge = relx_ext_state:post_purge(State),
     %% Not a behavior or code change, assume purely functional
     {load_module, Name, PrePurge, PostPurge, Deps};
 generate_instruction_advanced(Name, supervisor, _, _, _Opts) ->
     %% Supervisor
     {update, Name, supervisor};
-generate_instruction_advanced(Name, _, code_change, Deps, Opts) ->
-    PurgeOpts = proplists:get_value(purge_opts, Opts, []),
-    {PrePurge, PostPurge} = get_purge_opts(Name, PurgeOpts),
+generate_instruction_advanced(Name, _, code_change, Deps, State) ->
+    PrePurge = relx_ext_state:pre_purge(State),
+    PostPurge = relx_ext_state:post_purge(State),
     %% Includes code_change export
     {update, Name, {advanced, []}, PrePurge, PostPurge, Deps};
-generate_instruction_advanced(Name, _, _, Deps, Opts) ->
-    PurgeOpts = proplists:get_value(purge_opts, Opts, []),
-    {PrePurge, PostPurge} = get_purge_opts(Name, PurgeOpts),
+generate_instruction_advanced(Name, _, _, Deps, State) ->
+    PrePurge = relx_ext_state:pre_purge(State),
+    PostPurge = relx_ext_state:post_purge(State),
     %% Anything else
     {load_module, Name, PrePurge, PostPurge, Deps}.
 
@@ -675,20 +574,6 @@ generate_tuple(7) -> {undefined, undefined, undefined, undefined,
 generate_tuple(8) -> {undefined, undefined, undefined, undefined,
                       undefined, undefined, undefined, undefined}.
 
--spec get_current_rel_path(State, Name) -> Res when
-      State :: rebar_state:t(),
-      Name :: string(),
-      Res :: list().
-get_current_rel_path(State, Name) ->
-    {Opts, _} = rebar_state:command_parsed_args(State),
-    case proplists:get_value(current, Opts, undefined) of
-        undefined ->
-            filename:join([rebar_dir:base_dir(State),
-                           ?DEFAULT_RELEASE_DIR,
-                           Name]);
-        Path -> Path
-    end.
-
 %%------------------------------------------------------------------------------
 %%
 %% Add pre and post instructions to the instuctions created by appup generate.
@@ -756,34 +641,34 @@ get_current_rel_path(State, Name) ->
 %%
 %%------------------------------------------------------------------------------
 -spec merge_instructions(string(), AppupFiles, UpgradeInstructions, DowngradeInstructions,
-                         OldVer, NewVer, State) -> Res when
+                         OldVer, NewVer, AppDirs) -> Res when
       AppupFiles :: [] | [string()],
       UpgradeInstructions :: list(tuple()),
       DowngradeInstructions :: list(tuple()),
       OldVer :: string(),
       NewVer :: string(),
-      State :: rebar_state:t(),
+      AppDirs :: #{atom() => string()},
       Res :: {list(tuple()), list(tuple())}.
 merge_instructions(_App, [] = _AppupFiles, UpgradeInstructions, DowngradeInstructions,
-                   _OldVer, _NewVer, _State) ->
+                   _OldVer, _NewVer, _AppDirs) ->
     {UpgradeInstructions, DowngradeInstructions};
 merge_instructions(App, [_AppUpFile], UpgradeInstructions, DowngradeInstructions,
-                   OldVer, NewVer, State) ->
-    AppSrcPath = app_dir(App, State, "src"),
-    AppupPrePath = find_file_by_ext(AppSrcPath, ".appup.pre.src"),
-    AppupPostPath = find_file_by_ext(AppSrcPath, ".appup.post.src"),
-    rebar_api:debug(".appup.pre.src path: ~p",
-                    [AppupPrePath]),
-    rebar_api:debug("appup.post.src path: ~p",
-                    [AppupPostPath]),
+                   OldVer, NewVer, AppDirs) ->
+    {AppupPrePath, AppupPostPath} =
+        case maps:find(App, AppDirs) of
+            {ok, #{dir := AppDir}} ->
+                {get_file_if_exists(filename:join([AppDir, "src", atom_to_list(App) ++ ".appup.pre.src"])),
+                 get_file_if_exists(filename:join([AppDir, "src", atom_to_list(App) ++ ".appup.post.src"]))};
+            error ->
+                {undefined, undefined}
+        end,
+    rebar_api:debug(".appup.pre.src path: ~s", [AppupPrePath]),
+    rebar_api:debug("appup.post.src path: ~s", [AppupPostPath]),
     PreContents = read_pre_post_contents(AppupPrePath),
     PostContents = read_pre_post_contents(AppupPostPath),
-    rebar_api:debug(".appup.pre.src contents: ~p",
-                    [PreContents]),
-    rebar_api:debug(".appup.post.src contents: ~p",
-                    [PostContents]),
-    merge_instructions_0(PreContents, PostContents, OldVer, NewVer,
-                        UpgradeInstructions, DowngradeInstructions).
+    rebar_api:debug(".appup.pre.src contents: ~p", [PreContents]),
+    rebar_api:debug(".appup.post.src contents: ~p", [PostContents]),
+    merge_instructions_0(PreContents, PostContents, OldVer, NewVer, UpgradeInstructions, DowngradeInstructions).
 
 -spec merge_instructions_0(PreContents, PostContents, OldVer, NewVer,
                           UpgradeInstructions, DowngradeInstructions) -> Res when
@@ -920,10 +805,10 @@ expand_instructions([{Pattern, Insts} | T], OldVersion, Acc0) ->
           end,
     expand_instructions(T, OldVersion, Acc).
 
-find_file_by_ext(Dir, Ext) ->
-    case rebar3_appup_utils:find_files_by_ext(Dir, Ext) of
-        [] ->
-            undefined;
-        [Path] ->
-            Path
+get_file_if_exists(File) ->
+    case filelib:is_regular(File) of
+        true ->
+            File;
+        false ->
+            undefined
     end.

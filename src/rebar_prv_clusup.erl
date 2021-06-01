@@ -3,7 +3,7 @@
 -export([init/1, do/1, format_error/1]).
 
 -define(PROVIDER, clusup).
--define(DEPS, [gen_appup]).
+-define(DEPS, [install_deps]).
 %% -define(DEPS, [release]).
 
 %% ===================================================================

@@ -43,12 +43,18 @@ do(Provider, State) ->
     RelxExtConfig = rebar_state:get(State, relx_ext, []),
     {ok, RelxExtState} = relx_ext_config:to_state(RelxConfig2, RelxExtConfig),
 
+    PluginApps = rebar_state:all_plugin_deps(State),
+    PluginInfo = rebar3_appup_utils:appup_plugin_appinfo(PluginApps),
+    PluginDir = rebar_app_info:dir(PluginInfo),
+    RelxExtState1 = relx_ext_state:appup_template(RelxExtState, filename:join([PluginDir, "priv", "templates", "appup.tpl"])),
+
     Providers = rebar_state:providers(State),
     Cwd = rebar_state:dir(State),
 
     rebar_hooks:run_project_and_app_hooks(Cwd, pre, Provider, Providers, State),
 
-    Clusters = clusters_to_build(Provider, Opts, RelxExtState),
+    Clusters = clusters_to_build(Provider, Opts, RelxExtState1),
+    AllApps = all_apps(State),
 
     case Provider of
         Provider when Provider == clusup; Provider == clusuptar ->
@@ -56,16 +62,15 @@ do(Provider, State) ->
             UpFromVsn = proplists:get_value(upfrom, Opts, undefined),
             case Provider of
                 clusup ->
-                    relx_ext:build_clusup(ClusName, ToVsn, UpFromVsn, RelxExtState);
+                    relx_ext:build_clusup(ClusName, ToVsn, UpFromVsn, AllApps, Opts, RelxExtState1);
                 clusuptar ->
-                    relx_ext:build_clusuptar(ClusName, ToVsn, UpFromVsn, RelxExtState)
+                    relx_ext:build_clusuptar(ClusName, ToVsn, UpFromVsn, RelxExtState1)
             end;
         _ ->
-            parallel_run(Provider, Clusters, all_apps(State), RelxExtState)
+            parallel_run(Provider, Clusters, AllApps, RelxExtState1)
     end,
 
     rebar_hooks:run_project_and_app_hooks(Cwd, post, Provider, Providers, State),
-
     {ok, State}.
 
 read_relx_config(State, Options) ->
@@ -126,10 +131,10 @@ parallel_run(Provider, Releases, AllApps, RelxState) ->
 rel_worker(Release, [Provider, Apps, RelxState]) ->
     try
         case Provider of
-            release ->
-                relx:build_release(Release, Apps, RelxState);
-            tar ->
-                relx:build_tar(Release, Apps, RelxState)
+            clusrel ->
+                relx_ext:clusrel(Release, Apps, RelxState);
+            clustar ->
+                relx_ext:clustar(Release, Apps, RelxState)
         end
     catch
         error:Error ->
@@ -239,9 +244,10 @@ app_info_to_relx(#{name := Name,
 opt_spec_list() ->
     [{all, undefined, "all",  boolean,
       "If true runs the command against all configured  releases"},
-    {relname,  $n, "relname",  string,
+     {relname,  $n, "relname",  string,
       "Specify the name for the release that will be generated"},
      {relvsn, $v, "relvsn", string, "Specify the version for the release"},
+     {previous, $b, "previous", string, "location of the previous release"},
      {upfrom, $u, "upfrom", string,
       "Only valid with relup target, specify the release to upgrade from"},
      {output_dir, $o, "output-dir", string,

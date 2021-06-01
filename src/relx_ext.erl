@@ -13,7 +13,7 @@
 %% API
 -export([build_clusrel/3, build_clustar/3]).
 
--export([build_clusup/4, build_clusuptar/4]).
+-export([build_clusup/6, build_clusuptar/4]).
 
 -export([format_error/1]).
 %%%===================================================================
@@ -30,8 +30,9 @@ build_clustar(Cluster, Apps, State) ->
         relx_prv_resolve:do(Cluster, Apps, State),
     relx_prv_clustar:do(RealizedCluster, State1).
 
-build_clusup(ClusterName, ClusterVsn, UpFromVsn, RelxState) ->
-    relx_prv_clusup:do(ClusterName, ClusterVsn, UpFromVsn, RelxState),
+build_clusup(ClusterName, ClusterVsn, UpFromVsn, Apps, Opts, RelxState) ->
+    {ok, RelxState1} = relx_prv_appup:do(ClusterName, ClusterVsn, UpFromVsn, Apps, Opts, RelxState),
+    relx_prv_clusup:do(ClusterName, ClusterVsn, UpFromVsn, RelxState1),
     RelxState.
 
 build_clusuptar(ClusterName, ClusterVsn, UpFromVsn, RelxState) ->

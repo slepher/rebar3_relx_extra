@@ -191,6 +191,7 @@ make_upfrom_script(RelName, RelVsn, UpFromVsn, OutputDir, State) ->
 write_clusup_file(ClusterName, ClusterVsn, Clusup, OutputDir) ->
     ClusupBasename = atom_to_list(ClusterName) ++ ".clusup",
     ClusupFile1 = filename:join([OutputDir, "releases", ClusterVsn, ClusupBasename]),
+    rebar_api:info("clusup file ~s generated", [ClusupFile1]),
     ClusupFile2 = filename:join([OutputDir, "releases", ClusupBasename]),
     ok = ec_file:write_term(ClusupFile1, Clusup),
     ok = ec_file:write_term(ClusupFile2, Clusup).

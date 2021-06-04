@@ -166,12 +166,12 @@ make_upfrom_script(RelName, RelVsn, UpFromVsn, OutputDir, State) ->
     %% rebar_api:debug("systools:make_relup(~p, ~p, ~p, ~p)", [CurrentRel, UpFromRel, UpFromRel, Options]),
     case systools:make_relup(CurrentRel, [UpFromRel], [UpFromRel], Options) of
         ok ->
-            rebar_api:info("relup from ~s to ~s successfully created!~n", [UpFromRel, CurrentRel]);
+            rebar_api:info("relup from ~s to ~s successfully created!", [UpFromRel, CurrentRel]);
         error ->
             erlang:error(?RLX_ERROR({relup_generation_error, CurrentRel, UpFromRel}));
         {ok, RelUp, _, []} ->
             write_relup_file(RelName, RelVsn, RelUp, ClientDir),
-            rebar_api:info("relup ~p from ~s to ~s successfully created!~n", [RelName, UpFromVsn, RelVsn]);
+            rebar_api:info("relup ~p from ~s to ~s successfully created!", [RelName, UpFromVsn, RelVsn]);
         {ok, RelUp, Module, Warnings} ->
             case WarningsAsErrors of
                 true ->

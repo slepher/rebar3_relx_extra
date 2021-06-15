@@ -729,6 +729,7 @@ read_pre_post_contents(Path) ->
          {ok, [Contents]} ->
             Contents;
         {error, Reason} ->
+            rebar_api:error("consult file ~s failed ~p", [Reason]),
             erlang:exit({consult_file_failed, Path, Reason})
     end.
 

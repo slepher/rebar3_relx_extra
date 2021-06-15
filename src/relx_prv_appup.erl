@@ -698,7 +698,7 @@ merge_instructions_0(PreContents, PostContents, OldVer, NewVer,
 merge_pre_post_instructions(PreContents, PostContents, Direction, OldVer,
                             NewVer, Instructions) ->
     PreInstructions = expand_instructions(PreContents, Direction, OldVer, NewVer),
-    PostInstructions =     expand_instructions(PostContents, Direction, OldVer, NewVer),
+    PostInstructions = expand_instructions(PostContents, Direction, OldVer, NewVer),
     RemovDuplicatedInstructions = remove_duplicated_instructions(PreInstructions ++ PostInstructions, Instructions),
     PreInstructions ++ RemovDuplicatedInstructions ++ PostInstructions.
     %% expand_instructions(PreContents, Direction, OldVer, NewVer) ++
@@ -725,8 +725,12 @@ remove_duplicated_instructions(TargetInstruction, Instructions) ->
 read_pre_post_contents(undefined) ->
     undefined;
 read_pre_post_contents(Path) ->
-    {ok, [Contents]} = file:consult(Path),
-    Contents.
+    case file:consult(Path) of
+         {ok, [Contents]} ->
+            Contents;
+        {error, Reason} ->
+            erlang:exit({consult_file_failed, Path, Reason})
+    end.
 
 -spec expand_instructions(ExtFileContents, Direction, OldVer, NewVer) ->
     Res when

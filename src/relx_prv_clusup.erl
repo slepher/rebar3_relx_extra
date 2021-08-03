@@ -103,9 +103,46 @@ make_upfrom_cluster_script(ClusterName, ClusterVsn, UpFromClusterVsn, Releases, 
     UpFromReleases1 = lists:map(fun({Name, Vsn, _Apps}) -> {Name, Vsn} end, UpFromReleases),
     ReleasesChanged = changed(Releases1, UpFromReleases1),
     AppsChanged = changed(Apps, UpFromApps),
-    Meta = {clusup, ClusterName, ClusterVsn, UpFromClusterVsn, ReleasesChanged, AppsChanged, []},
+    Extra = generate_clusup_extra(ClusterName, ClusterVsn, UpFromClusterVsn),
+    Meta = {clusup, ClusterName, ClusterVsn, UpFromClusterVsn, ReleasesChanged, AppsChanged, Extra},
     write_clusup_file(ClusterName, ClusterVsn, Meta, OutputDir).
-    
+
+generate_clusup_extra(ClusterName, ClusterVsn, UpFromClusterVsn) ->
+    ClusupScript = atom_to_list(ClusterName) ++ ".clusup.script",
+    case filelib:is_file(ClusupScript) of
+        true ->
+            case file:consult(ClusupScript) of
+                {ok, Consulted} ->
+                    case lists:keyfind(ClusterVsn, 1, Consulted) of
+                        {ClusterVsn, PreUpgrade, PostUpgrade, PreDowngrade, PostDownGrade} ->
+                            PreUpgrade = get_clusup_script(UpFromClusterVsn, PreUpgrade),
+                            PostUpgrade = get_clusup_script(UpFromClusterVsn, PostUpgrade),
+                            PreDowngrade = get_clusup_script(UpFromClusterVsn, PreDowngrade),
+                            PostDownGrade = get_clusup_script(UpFromClusterVsn, PostDownGrade),
+                            [{pre_upgrade, PreUpgrade},
+                             {post_upgrade, PostUpgrade},
+                             {pre_downgrade, PreDowngrade},
+                             {post_downgrade, PostDownGrade}];
+                        Other ->
+                            erlang:error(?RLX_ERROR({invalid_clusupscript, Other}))
+                    end;
+                {error, Reason} ->
+                    erlang:error(?RLX_ERROR({invalid_clusupscript_file, ClusupScript, Reason}))
+            end;
+        false ->
+            []
+    end.
+                    
+get_clusup_script(UpFromClusterVsn, Scripts) ->
+    case proplists:get_value(UpFromClusterVsn, Scripts) of
+        undefined ->
+            [];
+        Scripts ->
+            Scripts
+    end.
+
+
+
 changed(Metas, MetasFrom) ->
     {Changes, Adds, Dels} = 
         lists:foldl(

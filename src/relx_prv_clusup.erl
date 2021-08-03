@@ -164,9 +164,10 @@ make_upfrom_script(RelName, RelVsn, UpFromVsn, OutputDir, State) ->
     CurrentRel = strip_dot_rel(find_rel_file(RelName, RelVsn, ClientDir)),
     UpFromRel =  strip_dot_rel(find_rel_file(RelName, UpFromVsn, ClientDir)),
     %% rebar_api:debug("systools:make_relup(~p, ~p, ~p, ~p)", [CurrentRel, UpFromRel, UpFromRel, Options]),
+    rebar_api:info("relup ~p from ~s to ~s creating...", [RelName, UpFromVsn, RelVsn]),
     case systools:make_relup(CurrentRel, [UpFromRel], [UpFromRel], Options) of
         ok ->
-            rebar_api:info("relup from ~s to ~s successfully created!", [UpFromRel, CurrentRel]);
+            rebar_api:info("relup ~p from ~s to ~s successfully created!", [RelName, UpFromVsn, RelVsn]);
         error ->
             erlang:error(?RLX_ERROR({relup_generation_error, CurrentRel, UpFromRel}));
         {ok, RelUp, _, []} ->
@@ -179,13 +180,13 @@ make_upfrom_script(RelName, RelVsn, UpFromVsn, OutputDir, State) ->
                     %% the relup file gets generated anyway, we need to delete
                     %% it
                     file:delete(filename:join([OutputDir, "relup"])),
-                    ?RLX_ERROR({relup_script_generation_warn, Module, Warnings});
+                    erlang:error(?RLX_ERROR({relup_script_generation_warn, Module, Warnings}));
                 false ->
                     write_relup_file(RelName, RelVsn, RelUp, ClientDir),
                     rebar_api:warn(format_error({relup_script_generation_warn, Module, Warnings}), [])
             end;
         {error,Module,Errors} ->
-            ?RLX_ERROR({relup_script_generation_error, Module, Errors})
+            erlang:error(?RLX_ERROR({relup_script_generation_error, Module, Errors}))
     end.
 
 write_clusup_file(ClusterName, ClusterVsn, Clusup, OutputDir) ->

@@ -706,18 +706,23 @@ merge_pre_post_instructions(PreContents, PostContents, Direction, OldVer,
     %% expand_instructions(PostContents, Direction, OldVer, NewVer).
 
 remove_duplicated_instructions(TargetInstruction, Instructions) ->
-    lists:reverse(
-      lists:foldl(
-        fun({update, Name, {advanced, []}, _PrePurge, _PostPurge, _Deps} = Update, Acc) ->
-                case lists:keymember(update, 1, TargetInstruction) and lists:keymember(Name, 2, TargetInstruction) of
-                    true ->
-                        Acc;
-                    false ->
+    case lists:keyfind(restart_application, 1, TargetInstruction) of
+        false ->
+            lists:reverse(
+              lists:foldl(
+                fun({update, Name, {advanced, []}, _PrePurge, _PostPurge, _Deps} = Update, Acc) ->
+                        case lists:keymember(update, 1, TargetInstruction) and lists:keymember(Name, 2, TargetInstruction) of
+                            true ->
+                                Acc;
+                            false ->
+                                [Update|Acc]
+                        end;
+                   (Update, Acc) ->
                         [Update|Acc]
-                end;
-           (Update, Acc) ->
-                [Update|Acc]
-        end, [], Instructions)).
+                end, [], Instructions));
+        _RestartApp ->
+            []
+    end.
 
 -spec read_pre_post_contents(Path) -> Res when
       Path :: undefined | string(),

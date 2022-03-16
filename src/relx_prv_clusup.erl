@@ -115,14 +115,16 @@ generate_clusup_extra(ClusterName, ClusterVsn, UpFromClusterVsn) ->
                 {ok, Consulted} ->
                     case lists:keyfind(ClusterVsn, 1, Consulted) of
                         {ClusterVsn, PreUpgrade, PostUpgrade, PreDowngrade, PostDownGrade} ->
-                            PreUpgrade = get_clusup_script(UpFromClusterVsn, PreUpgrade),
-                            PostUpgrade = get_clusup_script(UpFromClusterVsn, PostUpgrade),
-                            PreDowngrade = get_clusup_script(UpFromClusterVsn, PreDowngrade),
-                            PostDownGrade = get_clusup_script(UpFromClusterVsn, PostDownGrade),
-                            [{pre_upgrade, PreUpgrade},
-                             {post_upgrade, PostUpgrade},
-                             {pre_downgrade, PreDowngrade},
-                             {post_downgrade, PostDownGrade}];
+                            PreUpgradeScript = get_clusup_script(UpFromClusterVsn, PreUpgrade),
+                            PostUpgradeScript = get_clusup_script(UpFromClusterVsn, PostUpgrade),
+                            PreDowngradeScript = get_clusup_script(UpFromClusterVsn, PreDowngrade),
+                            PostDownGradeScript = get_clusup_script(UpFromClusterVsn, PostDownGrade),
+                            [{pre_upgrade, PreUpgradeScript},
+                             {post_upgrade, PostUpgradeScript},
+                             {pre_downgrade, PreDowngradeScript},
+                             {post_downgrade, PostDownGradeScript}];
+                        false ->
+                            [];
                         Other ->
                             erlang:error(?RLX_ERROR({invalid_clusupscript, Other}))
                     end;
@@ -133,15 +135,13 @@ generate_clusup_extra(ClusterName, ClusterVsn, UpFromClusterVsn) ->
             []
     end.
                     
-get_clusup_script(UpFromClusterVsn, Scripts) ->
-    case proplists:get_value(UpFromClusterVsn, Scripts) of
+get_clusup_script(UpFromClusterVsn, AllScripts) ->
+    case proplists:get_value(UpFromClusterVsn, AllScripts) of
         undefined ->
             [];
         Scripts ->
             Scripts
     end.
-
-
 
 changed(Metas, MetasFrom) ->
     {Changes, Adds, Dels} = 
@@ -167,7 +167,7 @@ make_upfrom_release_scripts(Releases, UpFromReleases, OutputDir, State) ->
     lists:foreach(
       fun({RelName, RelVsn, _RelApps}) ->
               case lists:keyfind(RelName, 1, UpFromReleases) of
-                  undefined ->
+                  false ->
                       ok;
                   {RelName, UpFromRelVsn, _} ->
                       case RelVsn == UpFromRelVsn of

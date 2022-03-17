@@ -22,12 +22,16 @@
 %%% into a release directory.
 -module(relx_prv_clusuptar).
 
--export([do/4, format_error/1]).
+-include_lib("providers/include/providers.hrl").
+
+-export([do/3, format_error/1]).
 
 %%============================================================================
 %% API
 %%============================================================================
-do(ClusName, ClusVsn, UpFromVsn, State) ->
+do(Cluster, UpFromVsn, State) ->
+    ClusName = relx_ext_cluster:name(Cluster),
+    ClusVsn = relx_ext_cluster:vsn(Cluster),
     RelxState = relx_ext_state:rlx_state(State),
     Dir = rlx_state:base_output_dir(RelxState),
     OutputDir = filename:join(Dir, ClusName),
@@ -35,8 +39,9 @@ do(ClusName, ClusVsn, UpFromVsn, State) ->
         {ok, DiffApplications} ->
             case diff_releases(OutputDir, ClusName, ClusVsn, UpFromVsn) of
                 {ok, Releases} ->
+                    ExtraReleases = extra_releases(ClusName, ClusVsn, OutputDir),
                     ApplicationFiles = application_files(DiffApplications, OutputDir, RelxState),
-                    ReleaseFiles = client_files(Releases, OutputDir, State),
+                    ReleaseFiles = client_files(Cluster, Releases, OutputDir, ExtraReleases, State),
                     ClusupBasename = atom_to_list(ClusName) ++ ".clusup",
                     ClusBasename = atom_to_list(ClusName) ++ ".clus",
                     ClusFiles = [{filename:join(["releases", ClusVsn, ClusBasename]),
@@ -50,6 +55,23 @@ do(ClusName, ClusVsn, UpFromVsn, State) ->
             end;
         {error, Reason} ->
             {error, Reason}
+
+    end.
+
+extra_releases(ClusName, ClusVsn, OutputDir) ->
+    ClusupBasename = atom_to_list(ClusName) ++ ".clusup",
+    Clusup = filename:join([OutputDir, "releases", ClusVsn, ClusupBasename]),
+    case file:consult(Clusup) of
+        {ok, [{clusup, _ClusterName, _ClusterVsn, _UpFromClusterVsn, ReleasesChanged, _AppsChanged, _Extra}]} ->
+            lists:foldl(
+              fun({add, Name, _Vsn}, Acc) ->
+                      [Name|Acc];
+                 (_, Acc) ->
+                      Acc
+              end, [], ReleasesChanged);
+        Other ->
+            io:format("get extra releases failed ~p~n", [Other]),
+            []
     end.
 
 diff_applications(OutputDir, Clusname, ClusVsn, FromVsn) ->
@@ -94,13 +116,27 @@ application_files(Applications, OutputDir, State) ->
                   ApplicationFiles ++ Acc
           end, [], Applications).
 
-client_files(Clients, OutputDir, _State) ->
+client_files(Cluster, Clients, OutputDir, ExtraReleases, StateExt) ->
     lists:foldl(
       fun({ReleaseName, ReleaseVsn, _}, Acc) ->
-              Target = filename:join(["clients", ReleaseName, "releases", ReleaseVsn]),
-              File = filename:join(OutputDir, Target),
-              [{Target, File}|Acc]
+              case lists:member(ReleaseName, ExtraReleases) of
+                  false ->
+                      Target = filename:join(["clients", ReleaseName, "releases", ReleaseVsn]),
+                      add_target(Target, OutputDir, Acc);
+                  true ->
+                      State = relx_ext_state:rlx_state(StateExt),
+                      Releases = relx_ext_cluster:solved_releases(Cluster),
+                      case lists:keyfind(ReleaseName, 2, Releases) of
+                          false ->
+                              erlang:error(?PRV_ERROR({invalid_sub_release, ReleaseName}));
+                          SubRelease ->
+                              relx_prv_clustar:sub_release_files(SubRelease, State, OutputDir)
+                      end
+              end
           end, [], Clients).
+
+add_target(Target, OutputDir, Acc) ->
+    [{Target, filename:join(OutputDir, Target)}|Acc].
 
 make_tar(OutputDir, Name, Vsn, FromVsn, Files, State) ->
     TarFile = filename:join(OutputDir, atom_to_list(Name) ++ "_" ++ FromVsn ++ "-" ++ Vsn ++ ".tar.gz"),

@@ -56,19 +56,7 @@ do(Provider, State) ->
     Clusters = clusters_to_build(Provider, Opts, RelxExtState1),
     AllApps = all_apps(State),
 
-    case Provider of
-        Provider when Provider == clusup; Provider == clusuptar ->
-            [{ClusName, ToVsn}|_] = Clusters,
-            UpFromVsn = proplists:get_value(upfrom, Opts, undefined),
-            case Provider of
-                clusup ->
-                    relx_ext:build_clusup(ClusName, ToVsn, UpFromVsn, AllApps, Opts, RelxExtState1);
-                clusuptar ->
-                    relx_ext:build_clusuptar(ClusName, ToVsn, UpFromVsn, RelxExtState1)
-            end;
-        _ ->
-            parallel_run(Provider, Clusters, AllApps, RelxExtState1)
-    end,
+    parallel_run(Provider, Clusters, AllApps, Opts, RelxExtState1),
 
     rebar_hooks:run_project_and_app_hooks(Cwd, post, Provider, Providers, State),
     {ok, State}.
@@ -114,42 +102,23 @@ format_error({config_file, Filename, Error}) ->
 format_error(Error) ->
     io_lib:format("~p", [Error]).
 
-parallel_run(Provider, [{ClusName, ClusVsn}], AllApps, RelxState) ->
+parallel_run(Provider, [{ClusName, ClusVsn}], AllApps, Opts, RelxState) ->
     case relx_ext_state:get_cluster(RelxState, ClusName, ClusVsn) of
         {ok, Cluster} ->
-            parallel_run(Provider, [Cluster], AllApps, RelxState);
+            parallel_run(Provider, [Cluster], AllApps, Opts, RelxState);
         error ->
             erlang:error(?PRV_ERROR({no_cluster_for, ClusName, ClusVsn}))
     end;
-parallel_run(clusrel, [Cluster], AllApps, RelxState) ->
+parallel_run(clusrel, [Cluster], AllApps, _Opts, RelxState) ->
     relx_ext:build_clusrel(Cluster, AllApps, RelxState);
-parallel_run(clustar, [Cluster], AllApps, RelxState) ->
+parallel_run(clustar, [Cluster], AllApps, _Opts, RelxState) ->
     relx_ext:build_clustar(Cluster, AllApps, RelxState);
-parallel_run(Provider, Releases, AllApps, RelxState) ->
-    rebar_parallel:queue(Releases, fun rel_worker/2, [Provider, AllApps, RelxState], fun rel_handler/2, []).
-
-rel_worker(Release, [Provider, Apps, RelxState]) ->
-    try
-        case Provider of
-            clusrel ->
-                relx_ext:clusrel(Release, Apps, RelxState);
-            clustar ->
-                relx_ext:clustar(Release, Apps, RelxState)
-        end
-    catch
-        error:Error ->
-            {Release, Error}
-    end.
-
-rel_handler({{Name, Vsn}, {error, {Module, Reason}}}, _Args) ->
-    rebar_log:log(error, "Error building release ~ts-~ts:~n~ts~ts", [Name, Vsn, rebar_utils:indent(1),
-                                                       Module:format_error(Reason)]),
-    ok;
-rel_handler({{Name, Vsn}, Other}, _Args) ->
-    rebar_log:log(error, "Error building release ~ts-~ts:~nUnknown return value: ~p", [Name, Vsn, Other]),
-    ok;
-rel_handler({ok, _}, _) ->
-    ok.
+parallel_run(clusup, [Cluster], AllApps, Opts, RelxState) ->
+    UpFromVsn = proplists:get_value(upfrom, Opts, undefined),
+    relx_ext:build_clusup(Cluster, UpFromVsn, AllApps, Opts, RelxState);
+parallel_run(clusuptar, [Cluster], AllApps, Opts, RelxState) ->
+    UpFromVsn = proplists:get_value(upfrom, Opts, undefined),
+    relx_ext:build_clusuptar(Cluster, UpFromVsn, AllApps, RelxState).
 
 clusters_to_build(Provider, Opts, RelxExtState)->
     case proplists:get_value(all, Opts, undefined) of
